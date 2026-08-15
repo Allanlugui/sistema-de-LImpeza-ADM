@@ -1,0 +1,7 @@
+{
+  "name": "Gestão Limpeza & Organização",
+  "description": "Painel de Gestão Administrativa e Operacional para serviços de limpeza e organização com controle completo de clientes, colaboradores, solicitações em tempo real, validação por código de segurança de 4 dígitos e SAC de feedbacks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
