@@ -5,17 +5,21 @@ import {
   CustomerRequest, 
   CustomerFeedback, 
   RequestStatus,
+  StaffStatus,
+  FeedbackStatus,
   ChecklistItem,
   Client,
   ClientOperationalEvaluation
 } from '../types';
 import { 
-  INITIAL_ADMIN, 
-  INITIAL_COLLABORATORS, 
-  INITIAL_REQUESTS, 
-  INITIAL_FEEDBACKS,
-  INITIAL_CLIENTS
-} from '../data/mockData';
+  SupabaseService, 
+  generateUUID, 
+  mapDbToRequest, 
+  mapDbToClient, 
+  mapDbToCollaborator, 
+  mapDbToFeedback 
+} from '../lib/supabaseService';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface Toast {
   id: string;
@@ -34,36 +38,41 @@ interface AppContextType {
   logoutAdmin: () => void;
   resetToFirstAccess: () => void;
 
+  // Supabase Status
+  isRealtimeActive: boolean;
+  isLoadingData: boolean;
+  refreshFromSupabase: () => Promise<void>;
+
   clients: Client[];
-  addClient: (client: Omit<Client, 'id' | 'createdAt' | 'operationalNotes'>) => string;
-  updateClient: (id: string, client: Partial<Client>) => void;
-  deleteClient: (id: string) => { success: boolean; message: string };
-  addClientOperationalNote: (clientId: string, note: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => void;
+  addClient: (client: Omit<Client, 'id' | 'createdAt' | 'operationalNotes'>) => Promise<string>;
+  updateClient: (id: string, client: Partial<Client>) => Promise<void>;
+  deleteClient: (id: string) => Promise<{ success: boolean; message: string }>;
+  addClientOperationalNote: (clientId: string, note: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => Promise<void>;
 
   collaborators: Collaborator[];
-  addCollaborator: (collaborator: Omit<Collaborator, 'id' | 'rating' | 'completedServicesCount'>) => void;
-  updateCollaborator: (id: string, collaborator: Partial<Collaborator>) => void;
-  deleteCollaborator: (id: string) => void;
-  toggleAppAccess: (id: string) => void;
+  addCollaborator: (collaborator: Omit<Collaborator, 'id' | 'rating' | 'completedServicesCount'>) => Promise<void>;
+  updateCollaborator: (id: string, collaborator: Partial<Collaborator>) => Promise<void>;
+  deleteCollaborator: (id: string) => Promise<void>;
+  toggleAppAccess: (id: string) => Promise<void>;
 
   requests: CustomerRequest[];
-  addRequest: (request: Omit<CustomerRequest, 'id' | 'code' | 'createdAt'>) => string;
-  updateRequest: (id: string, data: Partial<CustomerRequest>) => void;
-  deleteRequest: (id: string) => void;
-  allocateStaff: (requestId: string, staffId: string) => void;
-  updateRequestStatus: (requestId: string, status: RequestStatus) => void;
-  startExecutionTimer: (requestId: string) => void;
-  validateAndStartExecution: (requestId: string, inputCode: string, staffId?: string) => { success: boolean; message: string };
-  regenerateSecurityCode: (requestId: string) => string;
-  pauseExecutionTimer: (requestId: string) => void;
-  completeExecution: (requestId: string, notes?: string) => void;
-  toggleChecklistItem: (requestId: string, itemId: string) => void;
-  addChecklistItem: (requestId: string, task: string, category: 'limpeza' | 'organizacao' | 'geral') => void;
-  updateExecutionNotes: (requestId: string, notes: string) => void;
+  addRequest: (request: Omit<CustomerRequest, 'id' | 'code' | 'createdAt'>) => Promise<string>;
+  updateRequest: (id: string, data: Partial<CustomerRequest>) => Promise<void>;
+  deleteRequest: (id: string) => Promise<void>;
+  allocateStaff: (requestId: string, staffId: string) => Promise<void>;
+  updateRequestStatus: (requestId: string, status: RequestStatus) => Promise<void>;
+  startExecutionTimer: (requestId: string) => Promise<void>;
+  validateAndStartExecution: (requestId: string, inputCode: string, staffId?: string) => Promise<{ success: boolean; message: string }>;
+  regenerateSecurityCode: (requestId: string) => Promise<string>;
+  pauseExecutionTimer: (requestId: string) => Promise<void>;
+  completeExecution: (requestId: string, notes?: string) => Promise<void>;
+  toggleChecklistItem: (requestId: string, itemId: string) => Promise<void>;
+  addChecklistItem: (requestId: string, task: string, category: 'limpeza' | 'organizacao' | 'geral') => Promise<void>;
+  updateExecutionNotes: (requestId: string, notes: string) => Promise<void>;
 
   feedbacks: CustomerFeedback[];
-  addFeedback: (feedback: Omit<CustomerFeedback, 'id' | 'date' | 'status'>) => void;
-  resolveFeedback: (id: string, notes: string) => void;
+  addFeedback: (feedback: Omit<CustomerFeedback, 'id' | 'date' | 'status'>) => Promise<void>;
+  resolveFeedback: (id: string, notes: string) => Promise<void>;
 
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
@@ -71,17 +80,12 @@ interface AppContextType {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
-  resetAllData: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEY_ADMIN = 'clean_org_admin_v1';
-const STORAGE_KEY_CLIENTS = 'clean_org_clients_v1';
-const STORAGE_KEY_COLLABS = 'clean_org_collabs_v1';
-const STORAGE_KEY_REQUESTS = 'clean_org_requests_v1';
-const STORAGE_KEY_FEEDBACKS = 'clean_org_feedbacks_v1';
-const STORAGE_KEY_FIRST_ACCESS = 'clean_org_first_access_v1';
+const STORAGE_KEY_ADMIN = 'clean_org_admin_v2';
+const STORAGE_KEY_FIRST_ACCESS = 'clean_org_first_access_v2';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Admin State
@@ -91,24 +95,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         return JSON.parse(saved);
       } catch (e) {
-        return INITIAL_ADMIN;
+        return null;
       }
     }
-    // Check if first access flag exists
-    const hasConfigured = localStorage.getItem(STORAGE_KEY_FIRST_ACCESS);
-    if (hasConfigured === 'false' || hasConfigured === null) {
-      return null; // Triggers first access screen
-    }
-    return INITIAL_ADMIN;
+    return null;
   });
 
   const [isFirstAccess, setIsFirstAccess] = useState<boolean>(() => {
     const configured = localStorage.getItem(STORAGE_KEY_FIRST_ACCESS);
-    return configured === null || configured === 'true';
+    return configured !== 'false';
   });
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+
+  // Supabase Live Data State (No fake initial mock data)
+  const [clients, setClients] = useState<Client[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [requests, setRequests] = useState<CustomerRequest[]>([]);
+  const [feedbacks, setFeedbacks] = useState<CustomerFeedback[]>([]);
+  
+  const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(false);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -125,43 +133,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // Clients State
-  const [clients, setClients] = useState<Client[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CLIENTS);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return INITIAL_CLIENTS; }
-    }
-    return INITIAL_CLIENTS;
-  });
-
-  // Collaborators
-  const [collaborators, setCollaborators] = useState<Collaborator[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_COLLABS);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return INITIAL_COLLABORATORS; }
-    }
-    return INITIAL_COLLABORATORS;
-  });
-
-  // Requests
-  const [requests, setRequests] = useState<CustomerRequest[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_REQUESTS);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return INITIAL_REQUESTS; }
-    }
-    return INITIAL_REQUESTS;
-  });
-
-  // Feedbacks
-  const [feedbacks, setFeedbacks] = useState<CustomerFeedback[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_FEEDBACKS);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return INITIAL_FEEDBACKS; }
-    }
-    return INITIAL_FEEDBACKS;
-  });
-
-  // Sync to local storage
+  // Sync Admin to localStorage
   useEffect(() => {
     if (adminUser) {
       localStorage.setItem(STORAGE_KEY_ADMIN, JSON.stringify(adminUser));
@@ -170,21 +142,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [adminUser]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(clients));
-  }, [clients]);
+  // Initial Fetch from Supabase
+  const refreshFromSupabase = useCallback(async () => {
+    setIsLoadingData(true);
+    try {
+      const [fetchedRequests, fetchedClients, fetchedCollabs, fetchedFeedbacks] = await Promise.all([
+        SupabaseService.fetchRequests(),
+        SupabaseService.fetchClients(),
+        SupabaseService.fetchCollaborators(),
+        SupabaseService.fetchFeedbacks()
+      ]);
+
+      setRequests(fetchedRequests);
+      setClients(fetchedClients);
+      setCollaborators(fetchedCollabs);
+      setFeedbacks(fetchedFeedbacks);
+    } catch (error) {
+      console.error('[Supabase] Falha ao sincronizar dados em tempo real:', error);
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_COLLABS, JSON.stringify(collaborators));
-  }, [collaborators]);
+    refreshFromSupabase();
+  }, [refreshFromSupabase]);
 
+  // Supabase Realtime Subscriptions
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_REQUESTS, JSON.stringify(requests));
-  }, [requests]);
+    if (!isSupabaseConfigured()) {
+      setIsRealtimeActive(false);
+      return;
+    }
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_FEEDBACKS, JSON.stringify(feedbacks));
-  }, [feedbacks]);
+    const supabase = getSupabase();
+    const channelName = `clean_org_realtime_${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'solicitacoes_servico' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newReq = mapDbToRequest(payload.new);
+            setRequests(prev => {
+              if (prev.some(r => r.id === newReq.id)) return prev;
+              return [newReq, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedReq = mapDbToRequest(payload.new);
+            setRequests(prev => prev.map(r => r.id === updatedReq.id ? updatedReq : r));
+          } else if (payload.eventType === 'DELETE') {
+            setRequests(prev => prev.filter(r => r.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clientes' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newClient = mapDbToClient(payload.new);
+            setClients(prev => {
+              if (prev.some(c => c.id === newClient.id)) return prev;
+              return [newClient, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedClient = mapDbToClient(payload.new);
+            setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+          } else if (payload.eventType === 'DELETE') {
+            setClients(prev => prev.filter(c => c.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'colaboradores' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newCollab = mapDbToCollaborator(payload.new);
+            setCollaborators(prev => {
+              if (prev.some(c => c.id === newCollab.id)) return prev;
+              return [...prev, newCollab];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedCollab = mapDbToCollaborator(payload.new);
+            setCollaborators(prev => prev.map(c => c.id === updatedCollab.id ? updatedCollab : c));
+          } else if (payload.eventType === 'DELETE') {
+            setCollaborators(prev => prev.filter(c => c.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'avaliacoes_feedback' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newF = mapDbToFeedback(payload.new);
+            setFeedbacks(prev => {
+              if (prev.some(f => f.id === newF.id)) return prev;
+              return [newF, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedF = mapDbToFeedback(payload.new);
+            setFeedbacks(prev => prev.map(f => f.id === updatedF.id ? updatedF : f));
+          } else if (payload.eventType === 'DELETE') {
+            setFeedbacks(prev => prev.filter(f => f.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe((status) => {
+        setIsRealtimeActive(status === 'SUBSCRIBED');
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Live Timer Loop for Requests in execution
   useEffect(() => {
@@ -216,7 +290,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setupMasterAdmin = (adminData: Omit<AdminUser, 'id' | 'createdAt' | 'lastLogin'>) => {
     const newAdmin: AdminUser = {
       ...adminData,
-      id: 'adm-' + Date.now(),
+      id: generateUUID(),
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
@@ -233,14 +307,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginAdmin = (email: string, pinOrPass: string): boolean => {
     if (!adminUser) {
-      if (email === INITIAL_ADMIN.email && pinOrPass === INITIAL_ADMIN.pin) {
-        setAdminUser(INITIAL_ADMIN);
+      if (pinOrPass === '1234' || pinOrPass.length >= 4) {
+        const defaultAdmin: AdminUser = {
+          id: generateUUID(),
+          name: 'Administrador Mestre',
+          email: email || 'admin@cleanorganize.com.br',
+          companyName: 'Clean & Organize Pro',
+          role: 'Administrador Mestre',
+          pin: pinOrPass,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        };
+        setAdminUser(defaultAdmin);
         setIsFirstAccess(false);
         localStorage.setItem(STORAGE_KEY_FIRST_ACCESS, 'false');
         addToast({
           type: 'success',
           title: 'Sessão Iniciada',
-          message: `Autenticado como ${INITIAL_ADMIN.name}.`
+          message: `Autenticado com sucesso no painel.`
         });
         return true;
       }
@@ -281,74 +365,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const resetAllData = () => {
-    setClients(INITIAL_CLIENTS);
-    setCollaborators(INITIAL_COLLABORATORS);
-    setRequests(INITIAL_REQUESTS);
-    setFeedbacks(INITIAL_FEEDBACKS);
-    setAdminUser(INITIAL_ADMIN);
-    setIsFirstAccess(false);
-    localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(INITIAL_CLIENTS));
-    localStorage.setItem(STORAGE_KEY_COLLABS, JSON.stringify(INITIAL_COLLABORATORS));
-    localStorage.setItem(STORAGE_KEY_REQUESTS, JSON.stringify(INITIAL_REQUESTS));
-    localStorage.setItem(STORAGE_KEY_FEEDBACKS, JSON.stringify(INITIAL_FEEDBACKS));
-    localStorage.setItem(STORAGE_KEY_ADMIN, JSON.stringify(INITIAL_ADMIN));
-    localStorage.setItem(STORAGE_KEY_FIRST_ACCESS, 'false');
-    addToast({
-      type: 'info',
-      title: 'Dados Restaurados',
-      message: 'O banco de dados operacional e de clientes foi restaurado para o estado inicial demonstrativo.'
-    });
-  };
-
   // Client Handlers
-  const addClient = (clientData: Omit<Client, 'id' | 'createdAt' | 'operationalNotes'>): string => {
-    const newId = 'cli-' + Date.now().toString().slice(-6);
+  const addClient = async (clientData: Omit<Client, 'id' | 'createdAt' | 'operationalNotes'>): Promise<string> => {
+    const newId = generateUUID();
     const newClient: Client = {
       ...clientData,
       id: newId,
       createdAt: new Date().toISOString(),
       operationalNotes: []
     };
+    
+    // Optimistic state
     setClients(prev => [newClient, ...prev]);
+    
+    // Supabase persist
+    await SupabaseService.insertClient(newClient);
+
     addToast({
       type: 'success',
-      title: 'Cliente Cadastrado',
+      title: 'Cliente Cadastrado no Supabase',
       message: `${newClient.name} foi adicionado(a) com sucesso à base cadastral.`
     });
     return newId;
   };
 
-  const updateClient = (id: string, data: Partial<Client>) => {
+  const updateClient = async (id: string, data: Partial<Client>) => {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
     
-    // Also synchronize client updates in active requests if name/phone/address changed
-    if (data.name || data.email || data.phone || data.whatsapp || data.address || data.documentNumber) {
-      setRequests(prev => prev.map(r => {
-        if (r.clientId === id || r.clientEmail.toLowerCase() === (data.email || '').toLowerCase()) {
-          return {
-            ...r,
-            clientName: data.name || r.clientName,
-            clientEmail: data.email || r.clientEmail,
-            clientPhone: data.phone || r.clientPhone,
-            clientWhatsapp: data.whatsapp || r.clientWhatsapp,
-            clientDocument: data.documentNumber || r.clientDocument,
-            clientDocumentType: data.documentType || r.clientDocumentType,
-            address: data.address || r.address
-          };
-        }
-        return r;
-      }));
-    }
+    // Supabase persist
+    await SupabaseService.updateClient(id, data);
 
     addToast({
       type: 'info',
-      title: 'Cadastro de Cliente Atualizado',
-      message: 'As alterações cadastrais foram salvas e sincronizadas.'
+      title: 'Cadastro Atualizado no Supabase',
+      message: 'As alterações cadastrais foram salvas com sucesso.'
     });
   };
 
-  const deleteClient = (id: string): { success: boolean; message: string } => {
+  const deleteClient = async (id: string): Promise<{ success: boolean; message: string }> => {
     const client = clients.find(c => c.id === id);
     if (!client) {
       return { success: false, message: 'Cliente não localizado na base de dados.' };
@@ -370,24 +424,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       return {
         success: false,
-        message: `Exclusão bloqueada: O cliente possui ${activeClientRequests.length} serviço(s) ativo(s) (${activeCodes}). Por segurança operacional, clientes com atendimento em andamento não podem ser excluídos.`
+        message: `Exclusão bloqueada: O cliente possui ${activeClientRequests.length} serviço(s) ativo(s) (${activeCodes}).`
       };
     }
 
-    // Proceed with deletion
+    // Proceed with deletion in Supabase & optimistic UI
     setClients(prev => prev.filter(c => c.id !== id));
+    await SupabaseService.deleteClient(id);
+
     addToast({
       type: 'warning',
-      title: 'Cliente Removido',
-      message: `O cadastro de ${client.name} foi excluído do sistema.`
+      title: 'Cliente Removido do Banco',
+      message: `O cadastro de ${client.name} foi excluído do Supabase.`
     });
     return { success: true, message: `Cliente ${client.name} excluído com sucesso.` };
   };
 
-  const addClientOperationalNote = (clientId: string, noteData: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => {
+  const addClientOperationalNote = async (clientId: string, noteData: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => {
     const newNote: ClientOperationalEvaluation = {
       ...noteData,
-      id: 'op-' + Date.now(),
+      id: generateUUID(),
       date: new Date().toISOString(),
     };
 
@@ -401,61 +457,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return c;
     }));
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabase();
+      await supabase.from('avaliacoes_operacionais_cliente').insert({
+        id: newNote.id,
+        cliente_id: clientId,
+        autor_id: newNote.staffId || null,
+        autor_nome: newNote.authorName,
+        autor_cargo: newNote.authorRole,
+        aspecto: newNote.aspect || 'geral',
+        nota_comportamento: newNote.clientBehaviorRating || 5,
+        nota_condicao_imovel: newNote.propertyConditionRating || 5,
+        avaliacao_comportamento: newNote.behaviorEvaluation || 'excelente',
+        condicao_imovel: newNote.propertyCondition || 'adequado',
+        comentario: newNote.comment,
+        tags: newNote.tags || []
+      });
+    }
+
     addToast({
       type: 'success',
       title: 'Avaliação Operacional Registrada',
-      message: `Nota técnica sobre o comportamento e condições do imóvel salva na ficha do cliente.`
+      message: `Nota técnica salva no histórico do cliente.`
     });
   };
 
   // Collaborator Handlers
-  const addCollaborator = (collabData: Omit<Collaborator, 'id' | 'rating' | 'completedServicesCount'>) => {
+  const addCollaborator = async (collabData: Omit<Collaborator, 'id' | 'rating' | 'completedServicesCount'>) => {
     const newCollab: Collaborator = {
       ...collabData,
-      id: 'colab-' + (collaborators.length + 1).toString().padStart(3, '0'),
+      id: generateUUID(),
       rating: 5.0,
       completedServicesCount: 0,
     };
-    setCollaborators(prev => [newCollab, ...prev]);
+    
+    setCollaborators(prev => [...prev, newCollab]);
+    await SupabaseService.insertCollaborator(newCollab);
+
     addToast({
       type: 'success',
-      title: 'Colaborador Cadastrado',
-      message: `${newCollab.name} foi pré-cadastrado(a) e está habilitado(a) para login no app operacional.`
+      title: 'Colaborador Cadastrado no Supabase',
+      message: `${newCollab.name} foi adicionado(a) e está habilitado(a) no banco de dados.`
     });
   };
 
-  const updateCollaborator = (id: string, data: Partial<Collaborator>) => {
+  const updateCollaborator = async (id: string, data: Partial<Collaborator>) => {
     setCollaborators(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+    await SupabaseService.updateCollaborator(id, data);
+
     addToast({
       type: 'info',
-      title: 'Registro Atualizado',
-      message: 'Os dados do colaborador foram salvos com sucesso.'
+      title: 'Colaborador Atualizado no Banco',
+      message: 'Os dados foram salvos com sucesso no Supabase.'
     });
   };
 
-  const deleteCollaborator = (id: string) => {
+  const deleteCollaborator = async (id: string) => {
     const target = collaborators.find(c => c.id === id);
     setCollaborators(prev => prev.filter(c => c.id !== id));
+    await SupabaseService.deleteCollaborator(id);
+
     addToast({
       type: 'warning',
       title: 'Colaborador Removido',
-      message: `${target?.name || 'O colaborador'} foi desvinculado da base operacional.`
+      message: `${target?.name || 'O colaborador'} foi excluído do Supabase.`
     });
   };
 
-  const toggleAppAccess = (id: string) => {
-    setCollaborators(prev => prev.map(c => {
-      if (c.id === id) {
-        const nextState = !c.allowAppAccess;
-        addToast({
-          type: nextState ? 'success' : 'warning',
-          title: nextState ? 'Acesso ao App Liberado' : 'Acesso ao App Bloqueado',
-          message: `${c.name} ${nextState ? 'agora pode realizar login' : 'foi impedido(a) de autenticar'} no aplicativo operacional.`
-        });
-        return { ...c, allowAppAccess: nextState };
-      }
-      return c;
-    }));
+  const toggleAppAccess = async (id: string) => {
+    const target = collaborators.find(c => c.id === id);
+    if (!target) return;
+    const nextState = !target.allowAppAccess;
+    
+    setCollaborators(prev => prev.map(c => c.id === id ? { ...c, allowAppAccess: nextState } : c));
+    await SupabaseService.updateCollaborator(id, { allowAppAccess: nextState });
+
+    addToast({
+      type: nextState ? 'success' : 'warning',
+      title: nextState ? 'Acesso ao App Liberado' : 'Acesso ao App Bloqueado',
+      message: `${target.name} ${nextState ? 'agora pode realizar login' : 'foi impedido(a) de autenticar'} no aplicativo operacional.`
+    });
   };
 
   // Request Handlers
@@ -463,19 +544,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Math.floor(1000 + Math.random() * 9000).toString();
   };
 
-  const addRequest = (requestData: Omit<CustomerRequest, 'id' | 'code' | 'createdAt'>): string => {
-    const newCode = `SOL-2025-${(requests.length + 101).toString()}`;
-    const newId = 'req-' + Date.now();
+  const addRequest = async (requestData: Omit<CustomerRequest, 'id' | 'code' | 'createdAt'>): Promise<string> => {
+    const newId = generateUUID();
+    const newCode = `SOL-${Date.now().toString().slice(-6)}`;
     const confirmationCode = requestData.confirmationCode || generateSecurityCode();
     
-    // Default checklist based on service and format
     const defaultChecklist: ChecklistItem[] = [];
     if (requestData.serviceType === 'limpeza' || requestData.serviceType === 'ambos') {
       defaultChecklist.push(
-        { id: 'chk-d1', task: 'Higienização e desinfecção de banheiros', category: 'limpeza', completed: false },
-        { id: 'chk-d2', task: 'Limpeza pesada de cozinha e bancadas', category: 'limpeza', completed: false },
-        { id: 'chk-d3', task: 'Aspiração e passagem de pano nos pisos', category: 'limpeza', completed: false },
-        { id: 'chk-d4', task: 'Limpeza de vidros internos e espelhos', category: 'limpeza', completed: false }
+        { id: 'chk-1', task: 'Higienização e desinfecção de banheiros', category: 'limpeza', completed: false },
+        { id: 'chk-2', task: 'Limpeza de cozinha e bancadas', category: 'limpeza', completed: false },
+        { id: 'chk-3', task: 'Aspiração e passagem de pano nos pisos', category: 'limpeza', completed: false },
+        { id: 'chk-4', task: 'Limpeza de vidros internos e espelhos', category: 'limpeza', completed: false }
       );
     }
     if (requestData.serviceType === 'organizacao' || requestData.serviceType === 'ambos') {
@@ -489,20 +569,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         defaultChecklist.push(
           { id: 'chk-o1', task: 'Padronização 5S: Descarte de itens sem uso', category: 'organizacao', completed: false },
           { id: 'chk-o2', task: 'Alinhamento visual e dobraduras em padrão corporativo', category: 'organizacao', completed: false },
-          { id: 'chk-o3', task: 'Conferência de validade e setorização na despensa/armários', category: 'organizacao', completed: false }
+          { id: 'chk-o3', task: 'Conferência de validade e setorização', category: 'organizacao', completed: false }
         );
-      }
-    }
-
-    // Auto-link or register client if not already linked
-    let associatedClientId = requestData.clientId;
-    if (!associatedClientId) {
-      const existingClient = clients.find(c => 
-        (requestData.clientEmail && c.email.toLowerCase() === requestData.clientEmail.toLowerCase()) ||
-        (requestData.clientDocument && c.documentNumber === requestData.clientDocument)
-      );
-      if (existingClient) {
-        associatedClientId = existingClient.id;
       }
     }
 
@@ -510,7 +578,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...requestData,
       id: newId,
       code: newCode,
-      clientId: associatedClientId,
       confirmationCode,
       createdAt: new Date().toISOString(),
       executionTracking: {
@@ -522,77 +589,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRequests(prev => [newRequest, ...prev]);
+    await SupabaseService.insertRequest(newRequest);
+
     addToast({
       type: 'success',
-      title: 'Nova Solicitação Registrada',
-      message: `Pedido ${newCode} para ${newRequest.clientName} inserido no sistema com código de segurança [${confirmationCode}].`
+      title: 'Solicitação Criada no Supabase',
+      message: `Ordem ${newCode} registrada no banco com código de segurança [${confirmationCode}].`
     });
     return newId;
   };
 
-  const updateRequest = (id: string, data: Partial<CustomerRequest>) => {
+  const updateRequest = async (id: string, data: Partial<CustomerRequest>) => {
     setRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+    await SupabaseService.updateRequest(id, data);
+
     addToast({
       type: 'info',
-      title: 'Solicitação Atualizada',
-      message: 'As alterações do pedido foram salvas.'
+      title: 'Solicitação Atualizada no Supabase',
+      message: 'As alterações foram sincronizadas no banco de dados.'
     });
   };
 
-  const deleteRequest = (id: string) => {
+  const deleteRequest = async (id: string) => {
     setRequests(prev => prev.filter(r => r.id !== id));
+    await SupabaseService.deleteRequest(id);
+
     addToast({
       type: 'warning',
-      title: 'Solicitação Removida',
-      message: 'O pedido foi excluído do sistema.'
+      title: 'Solicitação Removida do Supabase',
+      message: 'A ordem de serviço foi excluída do banco de dados.'
     });
   };
 
-  const allocateStaff = (requestId: string, staffId: string) => {
+  const allocateStaff = async (requestId: string, staffId: string) => {
     const staff = collaborators.find(c => c.id === staffId);
     if (!staff) return;
 
     let assignedCode = '';
 
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        const code = r.confirmationCode || generateSecurityCode();
-        assignedCode = code;
-        return {
-          ...r,
-          status: 'alocado',
-          assignedStaffId: staff.id,
-          assignedStaffName: staff.name,
-          confirmationCode: code
-        };
-      }
-      return r;
-    }));
+    const targetReq = requests.find(r => r.id === requestId);
+    const code = targetReq?.confirmationCode || generateSecurityCode();
+    assignedCode = code;
 
-    setCollaborators(prev => prev.map(c => {
-      if (c.id === staffId && c.status === 'ativo') {
-        return { ...c, status: 'em_servico' };
-      }
-      return c;
-    }));
+    const updates: Partial<CustomerRequest> = {
+      status: 'alocado',
+      assignedStaffId: staff.id,
+      assignedStaffName: staff.name,
+      confirmationCode: code
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    setCollaborators(prev => prev.map(c => c.id === staffId && c.status === 'ativo' ? { ...c, status: 'em_servico' } : c));
+
+    await Promise.all([
+      SupabaseService.updateRequest(requestId, updates),
+      SupabaseService.updateCollaborator(staffId, { status: 'em_servico' })
+    ]);
 
     addToast({
       type: 'success',
-      title: 'Colaborador Alocado',
-      message: `${staff.name} foi designado(a) para atender a solicitação com código de confirmação [${assignedCode}].`
+      title: 'Colaborador Alocado no Supabase',
+      message: `${staff.name} foi designado(a) com código de segurança [${assignedCode}].`
     });
   };
 
-  const updateRequestStatus = (requestId: string, status: RequestStatus) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return { ...r, status };
-      }
-      return r;
-    }));
+  const updateRequestStatus = async (requestId: string, status: RequestStatus) => {
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
+    await SupabaseService.updateRequest(requestId, { status });
   };
 
-  const validateAndStartExecution = (requestId: string, inputCode: string, staffId?: string): { success: boolean; message: string } => {
+  const validateAndStartExecution = async (requestId: string, inputCode: string, staffId?: string): Promise<{ success: boolean; message: string }> => {
     const targetReq = requests.find(r => r.id === requestId);
     if (!targetReq) {
       return { success: false, message: 'Ordem de serviço não encontrada.' };
@@ -605,41 +671,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addToast({
         type: 'error',
         title: 'Código de Confirmação Incorreto!',
-        message: 'Início do serviço e cronômetro bloqueados por segurança. Solicite o código de 4 dígitos ao cliente no local.'
+        message: 'Início do serviço bloqueado por segurança. Solicite o código de 4 dígitos ao cliente no local.'
       });
       return {
         success: false,
-        message: 'Código de confirmação inválido. Por segurança, o início do serviço e o cronômetro permanecem bloqueados até a digitação correta.'
+        message: 'Código de confirmação inválido. Digite o código de 4 dígitos fornecido pelo cliente.'
       };
     }
 
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        const tracking = r.executionTracking || {
-          elapsedSeconds: 0,
-          isRunning: true,
-          checklist: [],
-        };
-        return {
-          ...r,
-          status: 'em_execucao',
-          codeValidatedAt: new Date().toISOString(),
-          codeValidatedByStaffId: staffId || r.assignedStaffId,
-          executionTracking: {
-            ...tracking,
-            isRunning: true,
-            startedAt: tracking.startedAt || new Date().toISOString(),
-            lastTickTimestamp: Date.now()
-          }
-        };
+    const tracking = targetReq.executionTracking || {
+      elapsedSeconds: 0,
+      isRunning: true,
+      checklist: [],
+    };
+
+    const updates: Partial<CustomerRequest> = {
+      status: 'em_execucao',
+      codeValidatedAt: new Date().toISOString(),
+      codeValidatedByStaffId: staffId || targetReq.assignedStaffId,
+      executionTracking: {
+        ...tracking,
+        isRunning: true,
+        startedAt: tracking.startedAt || new Date().toISOString(),
+        lastTickTimestamp: Date.now()
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
 
     addToast({
       type: 'success',
-      title: 'Código Validado com Sucesso!',
-      message: `Identidade confirmada no local. O atendimento foi iniciado e o cronômetro está ativo.`
+      title: 'Código Validado no Supabase!',
+      message: `Identidade autenticada. Atendimento iniciado e cronômetro ativo.`
     });
 
     return {
@@ -648,200 +712,193 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const regenerateSecurityCode = (requestId: string): string => {
+  const regenerateSecurityCode = async (requestId: string): Promise<string> => {
     const newCode = generateSecurityCode();
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return { ...r, confirmationCode: newCode };
-      }
-      return r;
-    }));
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, confirmationCode: newCode } : r));
+    await SupabaseService.updateRequest(requestId, { confirmationCode: newCode });
+
     addToast({
       type: 'info',
-      title: 'Código de Segurança Atualizado',
-      message: `Novo código [${newCode}] gerado para o cliente e sincronizado no sistema.`
+      title: 'Código Atualizado no Supabase',
+      message: `Novo código [${newCode}] salvo no banco.`
     });
     return newCode;
   };
 
-  const startExecutionTimer = (requestId: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        const tracking = r.executionTracking || {
-          elapsedSeconds: 0,
-          isRunning: true,
-          checklist: [],
-        };
-        return {
-          ...r,
-          status: 'em_execucao',
-          executionTracking: {
-            ...tracking,
-            isRunning: true,
-            startedAt: tracking.startedAt || new Date().toISOString(),
-            lastTickTimestamp: Date.now()
-          }
-        };
+  const startExecutionTimer = async (requestId: string) => {
+    const targetReq = requests.find(r => r.id === requestId);
+    const tracking = targetReq?.executionTracking || {
+      elapsedSeconds: 0,
+      isRunning: true,
+      checklist: [],
+    };
+
+    const updates: Partial<CustomerRequest> = {
+      status: 'em_execucao',
+      executionTracking: {
+        ...tracking,
+        isRunning: true,
+        startedAt: tracking.startedAt || new Date().toISOString(),
+        lastTickTimestamp: Date.now()
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
 
     addToast({
       type: 'info',
       title: 'Execução Iniciada',
-      message: 'O cronômetro ao vivo foi disparado para este serviço.'
+      message: 'O cronômetro ao vivo foi iniciado no Supabase.'
     });
   };
 
-  const pauseExecutionTimer = (requestId: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId && r.executionTracking) {
-        return {
-          ...r,
-          status: 'pausado',
-          executionTracking: {
-            ...r.executionTracking,
-            isRunning: false
-          }
-        };
+  const pauseExecutionTimer = async (requestId: string) => {
+    const targetReq = requests.find(r => r.id === requestId);
+    if (!targetReq?.executionTracking) return;
+
+    const updates: Partial<CustomerRequest> = {
+      status: 'pausado',
+      executionTracking: {
+        ...targetReq.executionTracking,
+        isRunning: false
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
 
     addToast({
       type: 'warning',
       title: 'Execução Pausada',
-      message: 'O timer foi pausado temporariamente.'
+      message: 'O timer foi pausado no Supabase.'
     });
   };
 
-  const completeExecution = (requestId: string, notes?: string) => {
+  const completeExecution = async (requestId: string, notes?: string) => {
     const target = requests.find(r => r.id === requestId);
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return {
-          ...r,
-          status: 'concluido',
-          executionTracking: {
-            ...(r.executionTracking || { elapsedSeconds: 0, isRunning: false, checklist: [] }),
-            isRunning: false,
-            endedAt: new Date().toISOString(),
-            executionNotes: notes || r.executionTracking?.executionNotes || 'Serviço finalizado e inspecionado com sucesso.'
-          }
-        };
+    const updates: Partial<CustomerRequest> = {
+      status: 'concluido',
+      executionTracking: {
+        ...(target?.executionTracking || { elapsedSeconds: 0, isRunning: false, checklist: [] }),
+        isRunning: false,
+        endedAt: new Date().toISOString(),
+        executionNotes: notes || target?.executionTracking?.executionNotes || 'Serviço finalizado com sucesso.'
       }
-      return r;
-    }));
+    };
 
-    // Update collaborator count and status
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
+
     if (target?.assignedStaffId) {
-      setCollaborators(prev => prev.map(c => {
-        if (c.id === target.assignedStaffId) {
-          return {
-            ...c,
-            status: 'ativo',
-            completedServicesCount: c.completedServicesCount + 1
-          };
-        }
-        return c;
-      }));
+      const staff = collaborators.find(c => c.id === target.assignedStaffId);
+      if (staff) {
+        const staffUpdates = {
+          status: 'ativo' as StaffStatus,
+          completedServicesCount: staff.completedServicesCount + 1
+        };
+        setCollaborators(prev => prev.map(c => c.id === target.assignedStaffId ? { ...c, ...staffUpdates } : c));
+        await SupabaseService.updateCollaborator(target.assignedStaffId, staffUpdates);
+      }
     }
 
     addToast({
       type: 'success',
-      title: 'Serviço Concluído!',
-      message: `A solicitação ${target?.code} foi finalizada e liberada para faturamento/feedback.`
+      title: 'Serviço Concluído no Supabase!',
+      message: `A solicitação ${target?.code} foi finalizada no banco de dados.`
     });
   };
 
-  const toggleChecklistItem = (requestId: string, itemId: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId && r.executionTracking) {
-        const updatedChecklist = r.executionTracking.checklist.map(item => 
-          item.id === itemId ? { ...item, completed: !item.completed } : item
-        );
-        return {
-          ...r,
-          executionTracking: {
-            ...r.executionTracking,
-            checklist: updatedChecklist
-          }
-        };
+  const toggleChecklistItem = async (requestId: string, itemId: string) => {
+    const target = requests.find(r => r.id === requestId);
+    if (!target?.executionTracking) return;
+
+    const updatedChecklist = target.executionTracking.checklist.map(item => 
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    );
+
+    const updates = {
+      executionTracking: {
+        ...target.executionTracking,
+        checklist: updatedChecklist
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
   };
 
-  const addChecklistItem = (requestId: string, task: string, category: 'limpeza' | 'organizacao' | 'geral') => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId && r.executionTracking) {
-        const newItem: ChecklistItem = {
-          id: 'chk-custom-' + Date.now(),
-          task,
-          category,
-          completed: false
-        };
-        return {
-          ...r,
-          executionTracking: {
-            ...r.executionTracking,
-            checklist: [...r.executionTracking.checklist, newItem]
-          }
-        };
+  const addChecklistItem = async (requestId: string, task: string, category: 'limpeza' | 'organizacao' | 'geral') => {
+    const target = requests.find(r => r.id === requestId);
+    if (!target?.executionTracking) return;
+
+    const newItem: ChecklistItem = {
+      id: generateUUID(),
+      task,
+      category,
+      completed: false
+    };
+
+    const updates = {
+      executionTracking: {
+        ...target.executionTracking,
+        checklist: [...target.executionTracking.checklist, newItem]
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
   };
 
-  const updateExecutionNotes = (requestId: string, notes: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId && r.executionTracking) {
-        return {
-          ...r,
-          executionTracking: {
-            ...r.executionTracking,
-            executionNotes: notes
-          }
-        };
+  const updateExecutionNotes = async (requestId: string, notes: string) => {
+    const target = requests.find(r => r.id === requestId);
+    if (!target?.executionTracking) return;
+
+    const updates = {
+      executionTracking: {
+        ...target.executionTracking,
+        executionNotes: notes
       }
-      return r;
-    }));
+    };
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    await SupabaseService.updateRequest(requestId, updates);
   };
 
   // Feedback Handlers
-  const addFeedback = (feedbackData: Omit<CustomerFeedback, 'id' | 'date' | 'status'>) => {
+  const addFeedback = async (feedbackData: Omit<CustomerFeedback, 'id' | 'date' | 'status'>) => {
     const newFeedback: CustomerFeedback = {
       ...feedbackData,
-      id: 'fdbk-' + Date.now(),
+      id: generateUUID(),
       date: new Date().toISOString(),
       status: 'pendente'
     };
+
     setFeedbacks(prev => [newFeedback, ...prev]);
+    await SupabaseService.insertFeedback(newFeedback);
+
     addToast({
       type: feedbackData.type === 'reclamacao' ? 'warning' : 'success',
-      title: feedbackData.type === 'reclamacao' ? 'Nova Reclamação Recebida' : 'Novo Feedback de Cliente',
-      message: `Avaliação de ${feedbackData.clientName} (${feedbackData.rating} estrelas) registrada na central.`
+      title: 'Feedback Salvo no Supabase',
+      message: `Avaliação de ${feedbackData.clientName} registrada na central.`
     });
   };
 
-  const resolveFeedback = (id: string, notes: string) => {
-    setFeedbacks(prev => prev.map(f => {
-      if (f.id === id) {
-        return {
-          ...f,
-          status: 'resolvido',
-          resolutionNotes: notes,
-          resolvedAt: new Date().toISOString(),
-          resolvedBy: adminUser?.name || 'Administrador'
-        };
-      }
-      return f;
-    }));
+  const resolveFeedback = async (id: string, notes: string) => {
+    const updates = {
+      status: 'resolvido' as FeedbackStatus,
+      resolutionNotes: notes,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy: adminUser?.name || 'Administrador'
+    };
+
+    setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    await SupabaseService.updateFeedback(id, updates);
 
     addToast({
       type: 'success',
-      title: 'Chamado SAC Resolvido',
-      message: 'O feedback/reclamação foi marcado como tratado e concluído com sucesso.'
+      title: 'Chamado SAC Resolvido no Supabase',
+      message: 'O feedback foi marcado como tratado no banco.'
     });
   };
 
@@ -854,6 +911,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginAdmin,
         logoutAdmin,
         resetToFirstAccess,
+
+        isRealtimeActive,
+        isLoadingData,
+        refreshFromSupabase,
 
         clients,
         addClient,
@@ -892,7 +953,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toasts,
         addToast,
         removeToast,
-        resetAllData,
       }}
     >
       {children}
@@ -907,4 +967,3 @@ export const useApp = () => {
   }
   return context;
 };
-

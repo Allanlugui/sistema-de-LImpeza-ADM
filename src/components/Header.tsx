@@ -6,20 +6,28 @@ import {
   Activity, 
   LogOut, 
   UserCheck, 
-  Bell, 
-  Search,
-  CheckCircle,
-  AlertTriangle,
   RotateCcw,
   Smartphone,
   HardHat,
-  ShieldCheck
+  RefreshCw,
+  Database,
+  Radio
 } from 'lucide-react';
 import { CustomerAppModal } from './CustomerAppModal';
 import { StaffAppModal } from './StaffAppModal';
 
 export const Header: React.FC = () => {
-  const { adminUser, logoutAdmin, requests, setActiveTab, resetToFirstAccess } = useApp();
+  const { 
+    adminUser, 
+    logoutAdmin, 
+    requests, 
+    setActiveTab, 
+    resetToFirstAccess,
+    isRealtimeActive,
+    isLoadingData,
+    refreshFromSupabase
+  } = useApp();
+
   const [time, setTime] = useState(new Date());
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showCustomerApp, setShowCustomerApp] = useState(false);
@@ -33,8 +41,6 @@ export const Header: React.FC = () => {
   const runningServicesCount = requests.filter(
     r => r.status === 'em_execucao' && r.executionTracking?.isRunning
   ).length;
-
-  const pendingRequestsCount = requests.filter(r => r.status === 'pendente').length;
 
   return (
     <header id="main-header" className="bg-white border-b border-[#DFE5DA] sticky top-0 z-30 shadow-xs">
@@ -62,6 +68,42 @@ export const Header: React.FC = () => {
 
           {/* Center Simulators & Live Status */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Supabase Realtime Connection Badge */}
+            <div className="hidden sm:flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={refreshFromSupabase}
+                disabled={isLoadingData}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                  isRealtimeActive
+                    ? 'bg-[#EBF1ED] text-[#345143] border-[#C2D6CA] hover:bg-[#DFEBE3]'
+                    : 'bg-[#FBF6EE] text-[#87551C] border-[#E8D9C0] hover:bg-[#F5ECD9]'
+                }`}
+                title="Sincronização em tempo real via Supabase. Clique para forçar atualização imediata."
+              >
+                {isLoadingData ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#5A7D6C]" />
+                    <span className="hidden md:inline">Sincronizando...</span>
+                  </>
+                ) : isRealtimeActive ? (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <Radio className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="hidden md:inline">Realtime Ativo</span>
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-3.5 h-3.5 text-[#A06C28]" />
+                    <span className="hidden md:inline">Supabase Sincronizado</span>
+                  </>
+                )}
+              </button>
+            </div>
+
             {/* Quick App Simulator Launchers */}
             <div className="flex items-center gap-1.5 bg-[#F4F6F1] p-1 rounded-xl border border-[#DFE5DA]">
               <button
@@ -118,7 +160,7 @@ export const Header: React.FC = () => {
               id="btn-admin-profile-toggle"
               type="button"
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="flex items-center gap-2.5 p-1.5 pl-2.5 pr-2 rounded-xl hover:bg-[#F4F6F1] border border-transparent hover:border-[#DFE5DA] transition-all text-left"
+              className="flex items-center gap-2.5 p-1.5 pl-2.5 pr-2 rounded-xl hover:bg-[#F4F6F1] border border-transparent hover:border-[#DFE5DA] transition-all text-left cursor-pointer"
             >
               <div className="hidden sm:block text-right">
                 <div className="text-xs font-semibold text-[#243029] leading-tight">
@@ -156,7 +198,7 @@ export const Header: React.FC = () => {
                       setActiveTab('configuracoes');
                       setShowProfileMenu(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-xs text-[#243029] hover:bg-[#F4F6F1] flex items-center gap-2"
+                    className="w-full text-left px-4 py-2 text-xs text-[#243029] hover:bg-[#F4F6F1] flex items-center gap-2 cursor-pointer"
                   >
                     <UserCheck className="w-4 h-4 text-[#86958E]" />
                     Perfil & Segurança Mestre
@@ -168,7 +210,7 @@ export const Header: React.FC = () => {
                       resetToFirstAccess();
                       setShowProfileMenu(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-xs text-[#9A5222] hover:bg-[#FAF1E8] flex items-center gap-2"
+                    className="w-full text-left px-4 py-2 text-xs text-[#9A5222] hover:bg-[#FAF1E8] flex items-center gap-2 cursor-pointer"
                   >
                     <RotateCcw className="w-4 h-4 text-[#C88346]" />
                     Recriar Credencial Mestre
@@ -183,7 +225,7 @@ export const Header: React.FC = () => {
                       setShowProfileMenu(false);
                       logoutAdmin();
                     }}
-                    className="w-full text-left px-4 py-2 text-xs text-rose-700 hover:bg-rose-50 font-medium flex items-center gap-2"
+                    className="w-full text-left px-4 py-2 text-xs text-rose-700 hover:bg-rose-50 font-medium flex items-center gap-2 cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 text-rose-600" />
                     Encerrar Sessão

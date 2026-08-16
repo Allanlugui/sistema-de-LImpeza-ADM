@@ -857,7 +857,39 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
       </div>
 
       {/* 4. Results List: Cards Mode OR Table Mode */}
-      {viewMode === 'cards' ? (
+      {filtered.length === 0 ? (
+        <div className="py-12 text-center bg-white rounded-2xl border border-[#DFE5DA] p-8 shadow-2xs">
+          <ClipboardList className="w-12 h-12 text-[#A2B3A6] mx-auto mb-3" />
+          <h3 className="text-base font-bold text-[#243029]">Nenhuma solicitação encontrada</h3>
+          <p className="text-xs text-[#6B7B70] mt-1 max-w-md mx-auto">
+            Não encontramos pedidos correspondentes aos filtros selecionados. Tente ajustar os parâmetros de data, status ou termo de busca.
+          </p>
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setStatusFilter('todos');
+                setServiceTypeFilter('todos');
+                setOrgFormatFilter('todos');
+                setDateFilterType('todas');
+                setNeighborhoodFilter('todos');
+              }}
+              className="px-4 py-2 bg-[#F4F6F1] hover:bg-[#EEF3ED] text-[#243029] text-xs font-semibold rounded-xl border border-[#DFE5DA] cursor-pointer"
+            >
+              Limpar Todos os Filtros
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenNew}
+              className="px-4 py-2 bg-[#5A7D6C] hover:bg-[#4a695b] text-white text-xs font-semibold rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Criar Nova Solicitação
+            </button>
+          </div>
+        </div>
+      ) : viewMode === 'cards' ? (
         <div className="space-y-4">
           {filtered.map((req) => {
             const isCustom = req.organizationFormat === 'personalizada';
@@ -1258,41 +1290,6 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {filtered.length === 0 && (
-        <div className="py-12 text-center bg-white rounded-2xl border border-[#DFE5DA] p-8 shadow-2xs">
-          <ClipboardList className="w-12 h-12 text-[#A2B3A6] mx-auto mb-3" />
-          <h3 className="text-base font-bold text-[#243029]">Nenhuma solicitação encontrada</h3>
-          <p className="text-xs text-[#6B7B70] mt-1 max-w-md mx-auto">
-            Não encontramos pedidos correspondentes aos filtros selecionados. Tente ajustar os parâmetros de data, status ou termo de busca.
-          </p>
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('todos');
-                setServiceTypeFilter('todos');
-                setOrgFormatFilter('todos');
-                setDateFilterType('todas');
-                setNeighborhoodFilter('todos');
-              }}
-              className="px-4 py-2 bg-[#F4F6F1] hover:bg-[#EEF3ED] text-[#243029] text-xs font-semibold rounded-xl border border-[#DFE5DA] cursor-pointer"
-            >
-              Limpar Todos os Filtros
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenNew}
-              className="px-4 py-2 bg-[#5A7D6C] hover:bg-[#4a695b] text-white text-xs font-semibold rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Criar Nova Solicitação
-            </button>
           </div>
         </div>
       )}
