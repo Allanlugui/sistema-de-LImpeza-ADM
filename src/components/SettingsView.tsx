@@ -113,7 +113,9 @@ CREATE TABLE IF NOT EXISTS public.clientes (
     whatsapp TEXT NOT NULL,
     preferred_contact TEXT DEFAULT 'whatsapp',
     address JSONB NOT NULL,
-    status TEXT NOT NULL DEFAULT 'ativo',
+    status TEXT NOT NULL DEFAULT 'ativo', -- 'ativo' ou 'bloqueado'
+    recovery_code TEXT, -- Código Único de Recuperação (6 dígitos numéricos)
+    password TEXT, -- Senha de acesso do cliente gerenciada no painel
     notes TEXT,
     preferred_service_type TEXT,
     preferred_org_format TEXT,
@@ -121,6 +123,12 @@ CREATE TABLE IF NOT EXISTS public.clientes (
     emergency_contact TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migração rápida para tabelas já existentes:
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS recovery_code TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS codigo_recuperacao TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS senha TEXT;
 
 -- 3. Tabela de Colaboradores
 CREATE TABLE IF NOT EXISTS public.colaboradores (

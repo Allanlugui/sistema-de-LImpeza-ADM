@@ -27,6 +27,16 @@ export function generateUUID(): string {
   });
 }
 
+export function generateRecoveryCode(): string {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const array = new Uint32Array(1);
+    crypto.getRandomValues(array);
+    const code = 100000 + (array[0] % 900000);
+    return code.toString();
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 // --------------------------------------------------------------------------
 // MAPPERS: Database -> Application Types
 // --------------------------------------------------------------------------
@@ -122,13 +132,13 @@ export function mapDbToClient(row: any, operationalNotes: ClientOperationalEvalu
   return {
     id: row.id,
     name: row.nome || row.name || 'Cliente',
-    photoUrl: row.foto_url || row.photoUrl || undefined,
-    documentType: (row.tipo_documento || row.documentType || 'CPF') as DocumentType,
-    documentNumber: row.documento || row.documentNumber || '',
+    photoUrl: row.foto_url || row.photo_url || row.photoUrl || undefined,
+    documentType: (row.tipo_documento || row.document_type || row.documentType || 'CPF') as DocumentType,
+    documentNumber: row.documento || row.document_number || row.documentNumber || '',
     email: row.email || '',
     phone: row.telefone || row.phone || '',
     whatsapp: row.whatsapp || row.telefone || '',
-    preferredContact: row.canal_preferencial || row.preferredContact || 'whatsapp',
+    preferredContact: row.canal_preferencial || row.preferred_contact || row.preferredContact || 'whatsapp',
     address: {
       street: row.logradouro || row.address?.street || '',
       number: row.numero || row.address?.number || '',
@@ -140,11 +150,13 @@ export function mapDbToClient(row: any, operationalNotes: ClientOperationalEvalu
       referencePoint: row.ponto_referencia || row.address?.referencePoint || ''
     },
     status: (row.status || 'ativo') as ClientStatus,
+    recoveryCode: row.recovery_code || row.codigo_recuperacao || row.recoveryCode || undefined,
+    password: row.password || row.senha || row.password_hash || undefined,
     createdAt: row.created_at || row.createdAt || new Date().toISOString(),
     notes: row.observacoes_internas || row.notes || '',
-    preferredServiceType: row.servico_preferencial || row.preferredServiceType || undefined,
-    preferredOrgFormat: row.formato_organizacao_preferencial || row.preferredOrgFormat || undefined,
-    emergencyContact: row.contato_emergencia || row.emergencyContact || undefined,
+    preferredServiceType: row.servico_preferencial || row.preferred_service_type || row.preferredServiceType || undefined,
+    preferredOrgFormat: row.formato_organizacao_preferencial || row.preferred_org_format || row.preferredOrgFormat || undefined,
+    emergencyContact: row.contato_emergencia || row.emergency_contact || row.emergencyContact || undefined,
     operationalNotes: clientNotes
   };
 }
@@ -153,14 +165,32 @@ export function mapClientToDb(c: Partial<Client>): Record<string, any> {
   const dbRow: Record<string, any> = {};
 
   if (c.id) dbRow.id = c.id;
-  if (c.name !== undefined) dbRow.nome = c.name;
-  if (c.photoUrl !== undefined) dbRow.foto_url = c.photoUrl;
-  if (c.documentType !== undefined) dbRow.tipo_documento = c.documentType;
-  if (c.documentNumber !== undefined) dbRow.documento = c.documentNumber;
+  if (c.name !== undefined) {
+    dbRow.nome = c.name;
+    dbRow.name = c.name;
+  }
+  if (c.photoUrl !== undefined) {
+    dbRow.foto_url = c.photoUrl;
+    dbRow.photo_url = c.photoUrl;
+  }
+  if (c.documentType !== undefined) {
+    dbRow.tipo_documento = c.documentType;
+    dbRow.document_type = c.documentType;
+  }
+  if (c.documentNumber !== undefined) {
+    dbRow.documento = c.documentNumber;
+    dbRow.document_number = c.documentNumber;
+  }
   if (c.email !== undefined) dbRow.email = c.email;
-  if (c.phone !== undefined) dbRow.telefone = c.phone;
+  if (c.phone !== undefined) {
+    dbRow.telefone = c.phone;
+    dbRow.phone = c.phone;
+  }
   if (c.whatsapp !== undefined) dbRow.whatsapp = c.whatsapp;
-  if (c.preferredContact !== undefined) dbRow.canal_preferencial = c.preferredContact;
+  if (c.preferredContact !== undefined) {
+    dbRow.canal_preferencial = c.preferredContact;
+    dbRow.preferred_contact = c.preferredContact;
+  }
 
   if (c.address) {
     if (c.address.street !== undefined) dbRow.logradouro = c.address.street;
@@ -171,9 +201,18 @@ export function mapClientToDb(c: Partial<Client>): Record<string, any> {
     if (c.address.state !== undefined) dbRow.estado = c.address.state;
     if (c.address.zipCode !== undefined) dbRow.cep = c.address.zipCode;
     if (c.address.referencePoint !== undefined) dbRow.ponto_referencia = c.address.referencePoint;
+    dbRow.address = c.address;
   }
 
   if (c.status !== undefined) dbRow.status = c.status;
+  if (c.recoveryCode !== undefined) {
+    dbRow.recovery_code = c.recoveryCode;
+    dbRow.codigo_recuperacao = c.recoveryCode;
+  }
+  if (c.password !== undefined) {
+    dbRow.password = c.password;
+    dbRow.senha = c.password;
+  }
   if (c.notes !== undefined) dbRow.observacoes_internas = c.notes;
   if (c.preferredServiceType !== undefined) dbRow.servico_preferencial = c.preferredServiceType;
   if (c.preferredOrgFormat !== undefined) dbRow.formato_organizacao_preferencial = c.preferredOrgFormat;

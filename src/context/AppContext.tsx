@@ -14,6 +14,7 @@ import {
 import { 
   SupabaseService, 
   generateUUID, 
+  generateRecoveryCode,
   mapDbToRequest, 
   mapDbToClient, 
   mapDbToCollaborator, 
@@ -48,6 +49,9 @@ interface AppContextType {
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<{ success: boolean; message: string }>;
   addClientOperationalNote: (clientId: string, note: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => Promise<void>;
+  resetClientPassword: (id: string, newPassword: string) => Promise<void>;
+  regenerateClientRecoveryCode: (id: string) => Promise<string>;
+  toggleClientStatus: (id: string) => Promise<void>;
 
   collaborators: Collaborator[];
   addCollaborator: (collaborator: Omit<Collaborator, 'id' | 'rating' | 'completedServicesCount'>) => Promise<void>;
@@ -368,9 +372,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Client Handlers
   const addClient = async (clientData: Omit<Client, 'id' | 'createdAt' | 'operationalNotes'>): Promise<string> => {
     const newId = generateUUID();
+    const newRecoveryCode = clientData.recoveryCode || generateRecoveryCode();
     const newClient: Client = {
       ...clientData,
       id: newId,
+      recoveryCode: newRecoveryCode,
+      password: clientData.password || undefined,
       createdAt: new Date().toISOString(),
       operationalNotes: []
     };
@@ -384,7 +391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast({
       type: 'success',
       title: 'Cliente Cadastrado no Supabase',
-      message: `${newClient.name} foi adicionado(a) com sucesso à base cadastral.`
+      message: `${newClient.name} foi adicionado(a) com Código de Recuperação #${newRecoveryCode}.`
     });
     return newId;
   };
@@ -399,6 +406,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'info',
       title: 'Cadastro Atualizado no Supabase',
       message: 'As alterações cadastrais foram salvas com sucesso.'
+    });
+  };
+
+  const resetClientPassword = async (id: string, newPassword: string) => {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    setClients(prev => prev.map(c => c.id === id ? { ...c, password: newPassword } : c));
+    await SupabaseService.updateClient(id, { password: newPassword });
+
+    addToast({
+      type: 'success',
+      title: 'Senha Redefinida com Sucesso',
+      message: `A senha de acesso do cliente ${client.name} foi atualizada no Supabase.`
+    });
+  };
+
+  const regenerateClientRecoveryCode = async (id: string): Promise<string> => {
+    const client = clients.find(c => c.id === id);
+    if (!client) return '';
+
+    const newCode = generateRecoveryCode();
+    setClients(prev => prev.map(c => c.id === id ? { ...c, recoveryCode: newCode } : c));
+    await SupabaseService.updateClient(id, { recoveryCode: newCode });
+
+    addToast({
+      type: 'warning',
+      title: 'Novo Código de Recuperação Gerado',
+      message: `Novo código para ${client.name}: #${newCode} (6 dígitos gravados no Supabase).`
+    });
+    return newCode;
+  };
+
+  const toggleClientStatus = async (id: string) => {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const nextStatus = client.status === 'ativo' ? 'bloqueado' : 'ativo';
+    setClients(prev => prev.map(c => c.id === id ? { ...c, status: nextStatus } : c));
+    await SupabaseService.updateClient(id, { status: nextStatus });
+
+    addToast({
+      type: nextStatus === 'ativo' ? 'success' : 'warning',
+      title: nextStatus === 'ativo' ? 'Acesso Desbloqueado' : 'Acesso Bloqueado',
+      message: `O status do cliente ${client.name} agora é ${nextStatus.toUpperCase()} no Supabase.`
     });
   };
 
@@ -921,6 +973,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateClient,
         deleteClient,
         addClientOperationalNote,
+        resetClientPassword,
+        regenerateClientRecoveryCode,
+        toggleClientStatus,
 
         collaborators,
         addCollaborator,

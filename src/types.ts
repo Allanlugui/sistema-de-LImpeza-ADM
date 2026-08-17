@@ -49,6 +49,8 @@ export interface Client {
   preferredContact?: 'whatsapp' | 'telefone' | 'email';
   address: Address;
   status: ClientStatus;
+  recoveryCode?: string; // 6-digit unique numeric recovery code for client support
+  password?: string; // Client access password managed or reset by admin
   createdAt: string;
   notes?: string;
   preferredServiceType?: ServiceType;

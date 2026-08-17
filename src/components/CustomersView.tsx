@@ -13,6 +13,7 @@ import {
   formatCurrency,
   formatDate
 } from '../utils/formatters';
+import { generateRecoveryCode } from '../lib/supabaseService';
 import { 
   UserCheck, 
   Plus, 
@@ -20,6 +21,7 @@ import {
   Edit3, 
   Trash2, 
   Eye, 
+  EyeOff,
   ShieldCheck, 
   ShieldAlert, 
   MapPin, 
@@ -40,7 +42,14 @@ import {
   AlertTriangle,
   ArrowRight,
   Filter,
-  UserPlus
+  UserPlus,
+  Copy,
+  Check,
+  RefreshCw,
+  Lock,
+  Unlock,
+  Ban,
+  Send
 } from 'lucide-react';
 
 import { PhotoUploadField } from './PhotoUploadField';
@@ -65,7 +74,9 @@ interface ClientFormData {
     referencePoint: string;
   };
   notes: string;
-  status: 'ativo' | 'inativo';
+  status: 'ativo' | 'bloqueado' | 'inativo';
+  recoveryCode: string;
+  password?: string;
 }
 
 const INITIAL_FORM_DATA: ClientFormData = {
@@ -89,6 +100,8 @@ const INITIAL_FORM_DATA: ClientFormData = {
   },
   notes: '',
   status: 'ativo',
+  recoveryCode: '',
+  password: '',
 };
 
 export const CustomersView: React.FC = () => {
@@ -98,6 +111,9 @@ export const CustomersView: React.FC = () => {
     updateClient, 
     deleteClient, 
     addClientOperationalNote,
+    resetClientPassword,
+    regenerateClientRecoveryCode,
+    toggleClientStatus,
     requests,
     setActiveTab,
     addToast
@@ -105,7 +121,7 @@ export const CustomersView: React.FC = () => {
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inativo'>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'bloqueado'>('todos');
   const [sortBy, setSortBy] = useState<'recent' | 'name' | 'services'>('recent');
 
   // Modal States
@@ -113,6 +129,16 @@ export const CustomersView: React.FC = () => {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState<ClientFormData>(INITIAL_FORM_DATA);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [showFormPassword, setShowFormPassword] = useState(false);
+
+  // Quick Password Reset Modal
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [clientForPasswordReset, setClientForPasswordReset] = useState<Client | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  // Copy Feedback Tracking
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // History & Details Modal
   const [selectedClientForDetails, setSelectedClientForDetails] = useState<Client | null>(null);
@@ -132,6 +158,29 @@ export const CustomersView: React.FC = () => {
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [deleteWarningMsg, setDeleteWarningMsg] = useState<string | null>(null);
 
+  // Helper for safe random password generation
+  const generateRandomPassword = () => {
+    const prefixes = ['Limpeza', 'Cliente', 'Acesso', 'Facil', 'Organize'];
+    const symbols = ['@', '#', '$', '!'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+    const num = Math.floor(1000 + Math.random() * 9000);
+    return `${prefix}${symbol}${num}`;
+  };
+
+  // Helper to copy text to clipboard with UI feedback
+  const handleCopyText = (text: string, key: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+    addToast({
+      type: 'info',
+      title: `${label} Copiado`,
+      message: `"${text}" copiado para a área de transferência.`
+    });
+  };
+
   // Filtered and Sorted Clients
   const filteredClients = useMemo(() => {
     return clients
@@ -143,10 +192,14 @@ export const CustomersView: React.FC = () => {
           client.email.toLowerCase().includes(query) ||
           client.phone.includes(query) ||
           client.documentNumber.includes(query) ||
+          (client.recoveryCode && client.recoveryCode.includes(query)) ||
           client.address.neighborhood.toLowerCase().includes(query) ||
           client.address.city.toLowerCase().includes(query);
 
-        const matchesStatus = statusFilter === 'todos' || client.status === statusFilter;
+        const matchesStatus = 
+          statusFilter === 'todos' ? true : 
+          statusFilter === 'bloqueado' ? (client.status === 'bloqueado' || client.status === 'inativo') :
+          client.status === 'ativo' || client.status === 'vip';
 
         return matchesSearch && matchesStatus;
       })
@@ -188,12 +241,19 @@ export const CustomersView: React.FC = () => {
           referencePoint: client.address.referencePoint || '',
         },
         notes: client.notes || '',
-        status: client.status,
+        status: (client.status === 'bloqueado' || client.status === 'inativo') ? 'bloqueado' : 'ativo',
+        recoveryCode: client.recoveryCode || generateRecoveryCode(),
+        password: client.password || '',
       });
     } else {
       setEditingClient(null);
-      setFormData(INITIAL_FORM_DATA);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        recoveryCode: generateRecoveryCode(),
+        password: generateRandomPassword(),
+      });
     }
+    setShowFormPassword(false);
     setFormErrors({});
     setIsFormModalOpen(true);
   };
@@ -217,7 +277,7 @@ export const CustomersView: React.FC = () => {
     }
 
     if (!formData.email.trim()) {
-      errors.email = 'E-mail é obrigatório para notificações e faturas.';
+      errors.email = 'E-mail é obrigatório para notificações e login no PWA.';
     } else if (!isValidEmail(formData.email)) {
       errors.email = 'Formato de e-mail inválido.';
     }
@@ -251,12 +311,16 @@ export const CustomersView: React.FC = () => {
       errors.city = 'Cidade é obrigatória.';
     }
 
+    if (!formData.recoveryCode || formData.recoveryCode.length !== 6 || !/^\d+$/.test(formData.recoveryCode)) {
+      errors.recoveryCode = 'Código de recuperação deve conter exatamente 6 dígitos numéricos.';
+    }
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   // Form Submit
-  const handleSubmitForm = (e: React.FormEvent) => {
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
       addToast({
@@ -267,51 +331,66 @@ export const CustomersView: React.FC = () => {
       return;
     }
 
+    const payload = {
+      name: formData.name.trim(),
+      photoUrl: formData.photoUrl,
+      documentType: formData.documentType,
+      documentNumber: formData.documentNumber.trim(),
+      email: formData.email.trim().toLowerCase(),
+      phone: formData.phone.trim(),
+      whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
+      preferredContact: formData.preferredContact,
+      address: {
+        ...formData.address,
+        street: formData.address.street.trim(),
+        number: formData.address.number.trim(),
+        neighborhood: formData.address.neighborhood.trim(),
+        city: formData.address.city.trim(),
+        zipCode: formData.address.zipCode.trim(),
+      },
+      notes: formData.notes.trim(),
+      status: formData.status,
+      recoveryCode: formData.recoveryCode.trim() || generateRecoveryCode(),
+      password: formData.password?.trim() || undefined,
+    };
+
     if (editingClient) {
-      updateClient(editingClient.id, {
-        name: formData.name.trim(),
-        photoUrl: formData.photoUrl,
-        documentType: formData.documentType,
-        documentNumber: formData.documentNumber.trim(),
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
-        whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
-        preferredContact: formData.preferredContact,
-        address: {
-          ...formData.address,
-          street: formData.address.street.trim(),
-          number: formData.address.number.trim(),
-          neighborhood: formData.address.neighborhood.trim(),
-          city: formData.address.city.trim(),
-          zipCode: formData.address.zipCode.trim(),
-        },
-        notes: formData.notes.trim(),
-        status: formData.status,
-      });
+      await updateClient(editingClient.id, payload);
     } else {
-      addClient({
-        name: formData.name.trim(),
-        photoUrl: formData.photoUrl,
-        documentType: formData.documentType,
-        documentNumber: formData.documentNumber.trim(),
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
-        whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
-        preferredContact: formData.preferredContact,
-        address: {
-          ...formData.address,
-          street: formData.address.street.trim(),
-          number: formData.address.number.trim(),
-          neighborhood: formData.address.neighborhood.trim(),
-          city: formData.address.city.trim(),
-          zipCode: formData.address.zipCode.trim(),
-        },
-        notes: formData.notes.trim(),
-        status: formData.status,
-      });
+      await addClient(payload);
     }
 
     setIsFormModalOpen(false);
+  };
+
+  // Handle Quick Password Reset Modal
+  const handleOpenPasswordResetModal = (client: Client) => {
+    setClientForPasswordReset(client);
+    setNewPasswordInput(generateRandomPassword());
+    setShowResetPassword(true);
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleSavePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientForPasswordReset) return;
+
+    if (!newPasswordInput.trim() || newPasswordInput.trim().length < 4) {
+      addToast({
+        type: 'error',
+        title: 'Senha Muito Curta',
+        message: 'A senha do cliente deve conter no mínimo 4 caracteres.'
+      });
+      return;
+    }
+
+    await resetClientPassword(clientForPasswordReset.id, newPasswordInput.trim());
+    setIsPasswordModalOpen(false);
+  };
+
+  // Handle Direct Status Toggle on Table Row
+  const handleToggleStatus = async (client: Client) => {
+    await toggleClientStatus(client.id);
   };
 
   // Handle Delete Click
@@ -333,9 +412,9 @@ export const CustomersView: React.FC = () => {
   };
 
   // Confirm Delete
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!clientToDelete) return;
-    const res = deleteClient(clientToDelete.id);
+    const res = await deleteClient(clientToDelete.id);
     if (res.success) {
       setClientToDelete(null);
       if (selectedClientForDetails?.id === clientToDelete.id) {
@@ -368,13 +447,6 @@ export const CustomersView: React.FC = () => {
       staffName: newNoteData.staffName.trim() || 'Equipe de Campo',
     });
 
-    // Update local modal state
-    const updatedClient = clients.find(c => c.id === selectedClientForDetails.id);
-    if (updatedClient) {
-      setSelectedClientForDetails(updatedClient);
-    }
-
-    setIsAddNoteModalOpen(false);
     setNewNoteData({
       rating: 5,
       behaviorEvaluation: 'excelente',
@@ -383,97 +455,90 @@ export const CustomersView: React.FC = () => {
       tags: 'Pontual, Local Organizado',
       staffName: 'Administração Central',
     });
+    setIsAddNoteModalOpen(false);
   };
 
-  // Quick stats
-  const totalActiveClients = clients.filter(c => c.status === 'ativo').length;
-  const totalServicesExecuted = requests.filter(r => r.status === 'concluido').length;
+  // Stats calculation
+  const totalClientsCount = clients.length;
+  const activeClientsCount = clients.filter(c => c.status === 'ativo' || c.status === 'vip').length;
+  const blockedClientsCount = clients.filter(c => c.status === 'bloqueado' || c.status === 'inativo').length;
+  const totalCompletedServices = requests.filter(r => r.status === 'concluido').length;
 
   return (
-    <div id="customers-view-container" className="space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-white rounded-2xl p-6 border border-[#DFE5DA] shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header with Title & Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#EBF1ED] flex items-center justify-center text-[#5A7D6C]">
-              <UserCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#243029]">Gestão de Clientes</h1>
-              <p className="text-sm text-[#64736B]">
-                Base cadastral completa com validação rigorosa de CPF/RG, endereços detalhados e histórico de ordens de serviço.
-              </p>
-            </div>
-          </div>
+          <h1 className="text-xl font-bold text-[#243029] tracking-tight flex items-center gap-2.5">
+            <UserCheck className="w-6 h-6 text-[#5A7D6C]" />
+            Cadastro & Gestão de Clientes
+          </h1>
+          <p className="text-xs text-[#64736B] mt-0.5">
+            Controle de cadastros, códigos únicos de recuperação (6 dígitos), senhas de acesso e status no Supabase.
+          </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            id="btn-add-new-client"
-            type="button"
-            onClick={() => handleOpenForm()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#5A7D6C] text-white rounded-xl text-sm font-semibold hover:bg-[#476356] transition-all shadow-xs"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Novo Cliente</span>
-          </button>
+        <button
+          id="btn-new-client"
+          type="button"
+          onClick={() => handleOpenForm()}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#5A7D6C] text-white rounded-xl text-xs font-bold hover:bg-[#476356] transition-all shadow-xs shrink-0 active:scale-98"
+        >
+          <UserPlus className="w-4 h-4" />
+          Cadastrar Novo Cliente
+        </button>
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="bg-white p-4 rounded-2xl border border-[#DFE5DA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#64736B] mb-1">
+            <span>Total de Clientes</span>
+            <Building2 className="w-4 h-4 text-[#5A7D6C]" />
+          </div>
+          <p className="text-2xl font-black text-[#243029]">{totalClientsCount}</p>
+          <span className="text-[11px] text-[#64736B] mt-0.5 block">Sincronizados com Supabase</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#DFE5DA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-emerald-700 mb-1">
+            <span>Acessos Ativos</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          </div>
+          <p className="text-2xl font-black text-emerald-800">{activeClientsCount}</p>
+          <span className="text-[11px] text-emerald-700 mt-0.5 block">Login liberado no PWA</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#DFE5DA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-rose-700 mb-1">
+            <span>Acessos Bloqueados</span>
+            <Ban className="w-4 h-4 text-rose-600" />
+          </div>
+          <p className="text-2xl font-black text-rose-800">{blockedClientsCount}</p>
+          <span className="text-[11px] text-rose-700 mt-0.5 block">Acesso restrito pelo admin</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#DFE5DA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#64736B] mb-1">
+            <span>Ordens Finalizadas</span>
+            <History className="w-4 h-4 text-[#5A7D6C]" />
+          </div>
+          <p className="text-2xl font-black text-[#243029]">{totalCompletedServices}</p>
+          <span className="text-[11px] text-[#64736B] mt-0.5 block">Histórico total do sistema</span>
         </div>
       </div>
 
-      {/* Metrics Summary Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-[#EBF1ED] text-[#446153] flex items-center justify-center font-bold">
-            {clients.length}
-          </div>
-          <div>
-            <p className="text-xs text-[#64736B] font-medium">Total de Clientes</p>
-            <p className="text-base font-bold text-[#243029]">{totalActiveClients} Ativos</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-[#64736B] font-medium">Serviços Executados</p>
-            <p className="text-base font-bold text-[#243029]">{totalServicesExecuted} Ordens Finalizadas</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
-            <KeyRound className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-[#64736B] font-medium">Segurança de Acesso</p>
-            <p className="text-base font-bold text-[#243029]">Código 4 Dígitos Ativo</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-[#64736B] font-medium">Proteção Anti-Exclusão</p>
-            <p className="text-base font-bold text-[#243029]">Trava de Serviços Ativos</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+      {/* Search & Filters */}
+      <div className="bg-white p-4 rounded-2xl border border-[#DFE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="relative w-full md:w-96">
           <Search className="w-4 h-4 text-[#86958E] absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             id="input-search-clients"
             type="text"
-            placeholder="Buscar por nome, CPF/RG, telefone, e-mail ou bairro..."
+            placeholder="Buscar por nome, CPF/RG, recovery code, fone, e-mail..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3.5 py-2 text-sm bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl text-[#243029] placeholder-[#86958E] focus:outline-none focus:border-[#5A7D6C] focus:bg-white transition-all"
+            className="w-full pl-9 pr-3.5 py-2 text-xs bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl text-[#243029] placeholder-[#86958E] focus:outline-none focus:border-[#5A7D6C] focus:bg-white transition-all"
           />
         </div>
 
@@ -496,16 +561,16 @@ export const CustomersView: React.FC = () => {
                 statusFilter === 'ativo' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-[#64736B] hover:text-[#243029]'
               }`}
             >
-              Ativos ({clients.filter(c => c.status === 'ativo').length})
+              Ativos ({activeClientsCount})
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter('inativo')}
+              onClick={() => setStatusFilter('bloqueado')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                statusFilter === 'inativo' ? 'bg-white text-slate-700 shadow-2xs' : 'text-[#64736B] hover:text-[#243029]'
+                statusFilter === 'bloqueado' ? 'bg-white text-rose-800 shadow-2xs' : 'text-[#64736B] hover:text-[#243029]'
               }`}
             >
-              Inativos ({clients.filter(c => c.status === 'inativo').length})
+              Bloqueados ({blockedClientsCount})
             </button>
           </div>
 
@@ -523,7 +588,7 @@ export const CustomersView: React.FC = () => {
         </div>
       </div>
 
-      {/* Clients Table / Cards */}
+      {/* Clients Table */}
       <div className="bg-white rounded-2xl border border-[#DFE5DA] shadow-xs overflow-hidden">
         {filteredClients.length === 0 ? (
           <div className="p-12 text-center">
@@ -531,13 +596,13 @@ export const CustomersView: React.FC = () => {
               <UserCheck className="w-7 h-7" />
             </div>
             <h3 className="text-base font-bold text-[#243029]">Nenhum cliente encontrado</h3>
-            <p className="text-sm text-[#64736B] max-w-md mx-auto mt-1 mb-4">
+            <p className="text-xs text-[#64736B] max-w-md mx-auto mt-1 mb-4">
               Não encontramos nenhum registro correspondente aos filtros de busca atuais.
             </p>
             <button
               type="button"
               onClick={() => handleOpenForm()}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#5A7D6C] text-white rounded-xl text-sm font-semibold hover:bg-[#476356]"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#5A7D6C] text-white rounded-xl text-xs font-semibold hover:bg-[#476356]"
             >
               <Plus className="w-4 h-4" />
               Cadastrar Primeiro Cliente
@@ -548,26 +613,30 @@ export const CustomersView: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F4F6F1] border-b border-[#DFE5DA] text-[11px] font-bold text-[#64736B] uppercase tracking-wider">
-                  <th className="py-3 px-4">Cliente & Documento</th>
-                  <th className="py-3 px-4">Endereço Completo</th>
-                  <th className="py-3 px-4">Contatos</th>
-                  <th className="py-3 px-4">Histórico de Serviços</th>
-                  <th className="py-3 px-4">Status & Avaliação</th>
-                  <th className="py-3 px-4 text-right">Ações</th>
+                  <th className="py-3.5 px-4">Cliente & Documento</th>
+                  <th className="py-3.5 px-4">Código de Recuperação</th>
+                  <th className="py-3.5 px-4">Acesso & Senha</th>
+                  <th className="py-3.5 px-4">Status de Acesso</th>
+                  <th className="py-3.5 px-4">Contatos & Local</th>
+                  <th className="py-3.5 px-4">Histórico</th>
+                  <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#DFE5DA] text-sm">
+              <tbody className="divide-y divide-[#DFE5DA] text-xs">
                 {filteredClients.map((client) => {
                   const clientRequests = requests.filter(r => r.clientId === client.id || r.clientEmail.toLowerCase() === client.email.toLowerCase());
-                  const activeRequestsCount = clientRequests.filter(r => ['pendente', 'alocado', 'a_caminho', 'em_execucao', 'pausado'].includes(r.status)).length;
-                  const operationalNotesCount = client.operationalNotes?.length || 0;
+                  const isBlocked = client.status === 'bloqueado' || client.status === 'inativo';
+                  const recoveryCode = client.recoveryCode || '100000';
 
                   return (
-                    <tr key={client.id} className="hover:bg-[#FAFBF9] transition-colors">
-                      {/* Name and Doc */}
+                    <tr 
+                      key={client.id} 
+                      className={`transition-colors ${isBlocked ? 'bg-rose-50/25 hover:bg-rose-50/40' : 'hover:bg-[#FAFBF9]'}`}
+                    >
+                      {/* Name and Document */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-[#EBF1ED] border border-[#DFE5DA] overflow-hidden shrink-0 flex items-center justify-center text-[#446153] font-bold text-sm shadow-2xs">
+                          <div className="w-10 h-10 rounded-xl bg-[#EBF1ED] border border-[#DFE5DA] overflow-hidden shrink-0 flex items-center justify-center text-[#446153] font-bold text-xs shadow-2xs">
                             {client.photoUrl ? (
                               <img src={client.photoUrl} alt={client.name} className="w-full h-full object-cover" />
                             ) : (
@@ -577,13 +646,11 @@ export const CustomersView: React.FC = () => {
                           <div>
                             <div className="font-semibold text-[#243029] flex items-center gap-2">
                               <span>{client.name}</span>
-                              {client.status === 'ativo' ? (
-                                <span className="w-2 h-2 rounded-full bg-emerald-500" title="Cliente Ativo" />
-                              ) : (
-                                <span className="w-2 h-2 rounded-full bg-slate-400" title="Cliente Inativo" />
+                              {client.status === 'vip' && (
+                                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-black uppercase">VIP</span>
                               )}
                             </div>
-                            <div className="text-xs text-[#64736B] flex items-center gap-1.5 mt-0.5">
+                            <div className="text-[11px] text-[#64736B] flex items-center gap-1.5 mt-0.5">
                               <span className="px-1.5 py-0.5 bg-[#EBF1ED] text-[#446153] rounded font-mono text-[10px] font-bold">
                                 {client.documentType || 'CPF'}: {client.documentNumber ? (client.documentType === 'RG' ? formatRG(client.documentNumber) : formatCPF(client.documentNumber)) : 'Não inf.'}
                               </span>
@@ -592,98 +659,149 @@ export const CustomersView: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Address */}
-                      <td className="py-3.5 px-4 max-w-xs">
-                        <div className="text-xs font-medium text-[#243029] flex items-start gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#5A7D6C] shrink-0 mt-0.5" />
-                          <span>
-                            {client.address.street}, {client.address.number}
-                            {client.address.complement ? ` - ${client.address.complement}` : ''}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-[#64736B] pl-5">
-                          {client.address.neighborhood} - {client.address.city}/{client.address.state} • CEP {formatCEP(client.address.zipCode)}
-                        </div>
-                        {client.address.referencePoint && (
-                          <div className="text-[10px] text-[#86958E] italic pl-5 mt-0.5">
-                            Ref: {client.address.referencePoint}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Contacts */}
-                      <td className="py-3.5 px-4">
-                        <div className="text-xs text-[#243029] flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-[#5A7D6C]" />
-                          <span>{formatPhone(client.phone)}</span>
-                        </div>
-                        <div className="text-xs text-[#64736B] flex items-center gap-1.5 mt-0.5">
-                          <Mail className="w-3.5 h-3.5 text-[#86958E]" />
-                          <span className="truncate max-w-[150px]">{client.email}</span>
-                        </div>
-                      </td>
-
-                      {/* History summary */}
+                      {/* Unique Recovery Code (6 digits) */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-1 bg-[#EBF1ED] text-[#446153] rounded-lg text-xs font-bold">
-                            {clientRequests.length} pedido(s)
-                          </span>
-                          {activeRequestsCount > 0 && (
-                            <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold animate-pulse flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {activeRequestsCount} em andamento
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#EBF1ED] border border-[#5A7D6C]/30 rounded-xl text-[#243029]">
+                            <KeyRound className="w-3.5 h-3.5 text-[#5A7D6C]" />
+                            <span className="font-mono text-xs font-black tracking-widest text-[#243029]">
+                              #{recoveryCode}
                             </span>
-                          )}
+                          </div>
+
+                          <button
+                            type="button"
+                            title="Copiar Código de Recuperação de 6 Dígitos"
+                            onClick={() => handleCopyText(recoveryCode, `code-${client.id}`, 'Código de Recuperação')}
+                            className="p-1.5 text-[#64736B] hover:text-[#243029] hover:bg-[#F4F6F1] rounded-lg transition-colors"
+                          >
+                            {copiedKey === `code-${client.id}` ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         </div>
-                        <div className="text-[11px] text-[#64736B] mt-1">
-                          {operationalNotesCount > 0 ? (
-                            <span className="text-emerald-700 font-medium flex items-center gap-1">
-                              <Star className="w-3 h-3 fill-emerald-600" />
-                              {operationalNotesCount} avaliação(ões) de equipe
-                            </span>
-                          ) : (
-                            <span className="text-[#86958E]">Sem notas técnicas</span>
-                          )}
+                        <span className="text-[10px] text-[#86958E] block mt-0.5">6 dígitos para resgate</span>
+                      </td>
+
+                      {/* Password & Admin Reset Action */}
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            {client.password ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#243029]">
+                                <Lock className="w-3 h-3 text-emerald-600" />
+                                <span className="font-mono">••••••••</span>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-amber-700 font-medium">Pendente de senha</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPasswordResetModal(client)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#5A7D6C] hover:text-[#476356] underline"
+                          >
+                            <KeyRound className="w-3 h-3" />
+                            Redefinir Senha
+                          </button>
                         </div>
                       </td>
 
-                      {/* Status */}
+                      {/* Visual Access Status & Direct Toggle */}
                       <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${
-                          client.status === 'ativo' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {client.status === 'ativo' ? 'Cadastro Ativo' : 'Cadastro Inativo'}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(client)}
+                            title={isBlocked ? "Clique para DESBLOQUEAR o acesso do cliente" : "Clique para BLOQUEAR o acesso do cliente"}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all shadow-2xs ${
+                              isBlocked 
+                                ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200' 
+                                : 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                            }`}
+                          >
+                            {isBlocked ? (
+                              <>
+                                <Ban className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Bloqueado</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Ativo</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(client)}
+                            className="text-[10px] text-[#64736B] hover:text-[#243029] underline"
+                          >
+                            {isBlocked ? 'Desbloquear' : 'Bloquear'}
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-[#86958E] block mt-0.5">
+                          {isBlocked ? 'Acesso ao PWA suspenso' : 'Login e agendamentos liberados'}
+                        </span>
+                      </td>
+
+                      {/* Contacts & Location */}
+                      <td className="py-3.5 px-4 max-w-xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-[11px] text-[#243029] font-medium">
+                            <Phone className="w-3 h-3 text-[#5A7D6C]" />
+                            <span>{formatPhone(client.phone)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] text-[#64736B]">
+                            <MapPin className="w-3 h-3 text-[#86958E] shrink-0" />
+                            <span className="truncate">{client.address.neighborhood} - {client.address.city}/{client.address.state}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Service History */}
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#F4F6F1] rounded-lg text-[11px] font-semibold text-[#243029]">
+                          <History className="w-3 h-3 text-[#5A7D6C]" />
+                          {clientRequests.length} OS
                         </span>
                       </td>
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1">
                           <button
-                            id={`btn-view-client-${client.id}`}
                             type="button"
+                            title="Ver Detalhes & Histórico Completo"
                             onClick={() => setSelectedClientForDetails(client)}
-                            title="Ver Histórico Completo, Códigos de Segurança e Avaliações"
-                            className="p-1.5 text-[#5A7D6C] hover:bg-[#EBF1ED] rounded-lg transition-colors"
+                            className="p-1.5 text-[#64736B] hover:text-[#5A7D6C] hover:bg-[#F4F6F1] rounded-lg transition-colors"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
-                            id={`btn-edit-client-${client.id}`}
                             type="button"
+                            title="Redefinir Senha do Cliente"
+                            onClick={() => handleOpenPasswordResetModal(client)}
+                            className="p-1.5 text-[#64736B] hover:text-[#5A7D6C] hover:bg-[#F4F6F1] rounded-lg transition-colors"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Editar Cadastro"
                             onClick={() => handleOpenForm(client)}
-                            title="Editar Dados Cadastrais"
-                            className="p-1.5 text-[#64736B] hover:bg-[#F4F6F1] rounded-lg transition-colors"
+                            className="p-1.5 text-[#64736B] hover:text-[#5A7D6C] hover:bg-[#F4F6F1] rounded-lg transition-colors"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
                           <button
-                            id={`btn-delete-client-${client.id}`}
                             type="button"
+                            title="Excluir Cadastro"
                             onClick={() => handleDeleteClick(client)}
-                            title="Excluir Cliente (com trava de segurança)"
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            className="p-1.5 text-[#64736B] hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -712,7 +830,7 @@ export const CustomersView: React.FC = () => {
                     {editingClient ? 'Editar Cadastro de Cliente' : 'Cadastrar Novo Cliente'}
                   </h3>
                   <p className="text-xs text-[#64736B]">
-                    Preencha todos os dados obrigatórios e verifique a integridade do CPF/RG e CEP.
+                    Preencha os dados cadastrais, credenciais de acesso ao PWA e código de recuperação no Supabase.
                   </p>
                 </div>
               </div>
@@ -726,14 +844,162 @@ export const CustomersView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmitForm} className="p-6 space-y-5">
-              {/* Personal Info */}
-              <div className="space-y-3">
+              {/* 1. Security & PWA Access Credentials Card */}
+              <div className="bg-[#FAFBF9] rounded-2xl p-4 border border-[#DFE5DA] space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#5A7D6C] uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound className="w-4 h-4 text-[#5A7D6C]" />
+                    Credenciais de Acesso & Segurança do Cliente
+                  </h4>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                    Supabase Auth & RLS
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Recovery Code (6 digits) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#243029] flex items-center gap-1">
+                        Código Único de Recuperação (6 dígitos) <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newCode = generateRecoveryCode();
+                          setFormData({ ...formData, recoveryCode: newCode });
+                          addToast({
+                            type: 'info',
+                            title: 'Novo Código Gerado',
+                            message: `Código #${newCode} gerado automaticamente.`
+                          });
+                        }}
+                        className="text-[11px] font-bold text-[#5A7D6C] hover:text-[#476356] inline-flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Gerar Novo
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        id="input-recovery-code"
+                        type="text"
+                        maxLength={6}
+                        value={formData.recoveryCode}
+                        onChange={(e) => setFormData({ ...formData, recoveryCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                        placeholder="Ex: 849201"
+                        className={`w-full px-3.5 py-2 text-sm bg-white border rounded-xl font-mono font-bold tracking-widest text-[#243029] focus:outline-none transition-all ${
+                          formErrors.recoveryCode ? 'border-rose-500' : 'border-[#DFE5DA] focus:border-[#5A7D6C]'
+                        }`}
+                      />
+                    </div>
+                    {formErrors.recoveryCode ? (
+                      <p className="text-[11px] text-rose-600 mt-1">{formErrors.recoveryCode}</p>
+                    ) : (
+                      <p className="text-[10px] text-[#64736B] mt-1">
+                        Código de resgate emergencial gerado no cadastro para suporte ao cliente.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Client Password */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#243029]">
+                        Senha de Acesso (PWA do Cliente)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomPass = generateRandomPassword();
+                          setFormData({ ...formData, password: randomPass });
+                          setShowFormPassword(true);
+                          addToast({
+                            type: 'info',
+                            title: 'Senha Segura Gerada',
+                            message: `Nova senha gerada: ${randomPass}`
+                          });
+                        }}
+                        className="text-[11px] font-bold text-[#5A7D6C] hover:text-[#476356] inline-flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Gerar Segura
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        id="input-client-password"
+                        type={showFormPassword ? 'text' : 'password'}
+                        value={formData.password || ''}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="Definir senha de acesso..."
+                        className="w-full pl-3.5 pr-10 py-2 text-sm bg-white border border-[#DFE5DA] rounded-xl text-[#243029] focus:outline-none focus:border-[#5A7D6C] transition-all font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowFormPassword(!showFormPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86958E] hover:text-[#243029]"
+                      >
+                        {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-[#64736B] mt-1">
+                      O gestor pode definir ou redefinir a senha a qualquer momento para suporte.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status selector */}
+                <div className="pt-2 border-t border-[#DFE5DA]">
+                  <label className="block text-xs font-semibold text-[#243029] mb-1.5">
+                    Status de Acesso do Cliente no PWA
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, status: 'ativo' })}
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
+                        formData.status === 'ativo'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs font-bold'
+                          : 'bg-white border-[#DFE5DA] text-[#64736B] hover:bg-[#F4F6F1]'
+                      }`}
+                    >
+                      <CheckCircle2 className={`w-4 h-4 ${formData.status === 'ativo' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <div>
+                        <span className="text-xs block">Acesso Liberado (Ativo)</span>
+                        <span className="text-[10px] opacity-75 block font-normal">Pode solicitar e acompanhar serviços</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, status: 'bloqueado' })}
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
+                        formData.status === 'bloqueado'
+                          ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-2xs font-bold'
+                          : 'bg-white border-[#DFE5DA] text-[#64736B] hover:bg-[#F4F6F1]'
+                      }`}
+                    >
+                      <Ban className={`w-4 h-4 ${formData.status === 'bloqueado' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <div>
+                        <span className="text-xs block">Acesso Bloqueado</span>
+                        <span className="text-[10px] opacity-75 block font-normal">Login suspenso pela administração</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Personal Info */}
+              <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-bold text-[#5A7D6C] uppercase tracking-wider flex items-center gap-1.5">
                   <UserCheck className="w-3.5 h-3.5" />
                   Dados Pessoais & Documentação
                 </h4>
 
-                {/* Photo Upload (Drag and Drop / File Picker / Camera) */}
+                {/* Photo Upload */}
                 <PhotoUploadField
                   id="client-photo-upload"
                   label="Foto de Perfil do Cliente"
@@ -806,7 +1072,7 @@ export const CustomersView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Contacts */}
+              {/* 3. Contacts */}
               <div className="space-y-3 pt-3 border-t border-[#DFE5DA]">
                 <h4 className="text-xs font-bold text-[#5A7D6C] uppercase tracking-wider flex items-center gap-1.5">
                   <Phone className="w-3.5 h-3.5" />
@@ -833,7 +1099,7 @@ export const CustomersView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-[#243029] mb-1">
-                      WhatsApp (opcional)
+                      WhatsApp
                     </label>
                     <input
                       id="input-client-whatsapp"
@@ -863,7 +1129,7 @@ export const CustomersView: React.FC = () => {
 
                   <div className="sm:col-span-3">
                     <label className="block text-xs font-semibold text-[#243029] mb-1">
-                      E-mail de Notificações / Cobrança <span className="text-rose-500">*</span>
+                      E-mail (Login no PWA e Notificações) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       id="input-client-email"
@@ -880,7 +1146,7 @@ export const CustomersView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Detailed Address */}
+              {/* 4. Detailed Address */}
               <div className="space-y-3 pt-3 border-t border-[#DFE5DA]">
                 <h4 className="text-xs font-bold text-[#5A7D6C] uppercase tracking-wider flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" />
@@ -950,7 +1216,7 @@ export const CustomersView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-[#243029] mb-1">
-                      Complemento (Apto, Bloco, Casa)
+                      Complemento
                     </label>
                     <input
                       id="input-client-complement"
@@ -1022,21 +1288,6 @@ export const CustomersView: React.FC = () => {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#243029] mb-1">
-                      Status do Cadastro
-                    </label>
-                    <select
-                      id="select-client-status"
-                      value={formData.status}
-                      onChange={(e: any) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3.5 py-2 text-sm bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                    >
-                      <option value="ativo">Ativo (Permitido solicitar)</option>
-                      <option value="inativo">Inativo (Bloqueado)</option>
-                    </select>
-                  </div>
-
                   <div className="sm:col-span-3">
                     <label className="block text-xs font-semibold text-[#243029] mb-1">
                       Ponto de Referência (Crucial para equipe de campo)
@@ -1056,7 +1307,7 @@ export const CustomersView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Notes */}
+              {/* 5. Notes */}
               <div className="space-y-2 pt-3 border-t border-[#DFE5DA]">
                 <label className="block text-xs font-semibold text-[#243029]">
                   Observações Internas Administrativas
@@ -1071,7 +1322,7 @@ export const CustomersView: React.FC = () => {
                 />
               </div>
 
-              {/* Actions */}
+              {/* Form Actions */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#DFE5DA]">
                 <button
                   type="button"
@@ -1093,7 +1344,115 @@ export const CustomersView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= MODAL DE HISTÓRICO & AVALIAÇÕES DO CLIENTE ================= */}
+      {/* ================= MODAL DE REDEFINIÇÃO RÁPIDA DE SENHA ================= */}
+      {isPasswordModalOpen && clientForPasswordReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#DFE5DA] shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#DFE5DA] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#EBF1ED] text-[#5A7D6C] flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#243029]">Redefinir Senha do Cliente</h3>
+                  <p className="text-[11px] text-[#64736B]">{clientForPasswordReset.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPasswordModalOpen(false)}
+                className="p-1 text-[#86958E] hover:text-[#243029] rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePasswordReset} className="space-y-4">
+              <div className="bg-[#FAFBF9] p-3 rounded-xl border border-[#DFE5DA] space-y-2 text-xs">
+                <div className="flex items-center justify-between text-[#64736B]">
+                  <span>E-mail de Login:</span>
+                  <span className="font-semibold text-[#243029]">{clientForPasswordReset.email}</span>
+                </div>
+                <div className="flex items-center justify-between text-[#64736B]">
+                  <span>Código de Recuperação:</span>
+                  <span className="font-mono font-bold text-[#5A7D6C]">#{clientForPasswordReset.recoveryCode || '100000'}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-[#243029]">
+                    Nova Senha Provisória / Definitiva
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pass = generateRandomPassword();
+                      setNewPasswordInput(pass);
+                      setShowResetPassword(true);
+                    }}
+                    className="text-[11px] font-bold text-[#5A7D6C] hover:text-[#476356] inline-flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Gerar Aleatória
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <input
+                    id="input-reset-password-value"
+                    type={showResetPassword ? 'text' : 'password'}
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="Digite a nova senha..."
+                    className="w-full pl-3 pr-10 py-2 text-sm bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl text-[#243029] font-mono focus:outline-none focus:border-[#5A7D6C] focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86958E] hover:text-[#243029]"
+                  >
+                    {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Copy & Share message helper */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const message = `Olá ${clientForPasswordReset.name}, sua nova senha de acesso ao portal Clean & Organize é: ${newPasswordInput}. Seu Código de Recuperação é #${clientForPasswordReset.recoveryCode || '100000'}.`;
+                    handleCopyText(message, 'whatsapp-msg', 'Mensagem de Suporte');
+                  }}
+                  className="w-full py-2 px-3 bg-[#EBF1ED] text-[#446153] hover:bg-[#dfe8e2] rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copiar Mensagem Pronta para WhatsApp
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#DFE5DA]">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className="px-3.5 py-2 text-xs font-medium text-[#64736B] hover:bg-[#F4F6F1] rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#5A7D6C] text-white rounded-xl text-xs font-bold hover:bg-[#476356] shadow-xs"
+                >
+                  Salvar Nova Senha no Supabase
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL DE DETALHES, HISTÓRICO & AVALIAÇÕES ================= */}
       {selectedClientForDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-[#DFE5DA] shadow-xl">
@@ -1111,7 +1470,9 @@ export const CustomersView: React.FC = () => {
                   <h3 className="text-base font-bold text-[#243029] flex items-center gap-2">
                     {selectedClientForDetails.name}
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      selectedClientForDetails.status === 'ativo' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                      selectedClientForDetails.status === 'ativo' || selectedClientForDetails.status === 'vip' 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : 'bg-rose-100 text-rose-800'
                     }`}>
                       {selectedClientForDetails.status.toUpperCase()}
                     </span>
@@ -1131,8 +1492,62 @@ export const CustomersView: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Security & Access Box */}
+              <div className="bg-[#FAFBF9] rounded-2xl p-4 border border-[#DFE5DA] grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                <div>
+                  <span className="text-[10px] font-bold text-[#64736B] uppercase block">Código Único de Recuperação</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="font-mono text-base font-black text-[#243029] bg-white px-2.5 py-1 rounded-lg border border-[#DFE5DA]">
+                      #{selectedClientForDetails.recoveryCode || '100000'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(selectedClientForDetails.recoveryCode || '100000', 'modal-rec', 'Código')}
+                      className="p-1.5 text-[#64736B] hover:text-[#243029] hover:bg-white rounded-lg"
+                    >
+                      {copiedKey === 'modal-rec' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-[#64736B] uppercase block">Status de Acesso PWA</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await toggleClientStatus(selectedClientForDetails.id);
+                      setSelectedClientForDetails(prev => prev ? {
+                        ...prev,
+                        status: prev.status === 'ativo' ? 'bloqueado' : 'ativo'
+                      } : null);
+                    }}
+                    className={`mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                      selectedClientForDetails.status === 'ativo'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-rose-100 text-rose-800 border-rose-300'
+                    }`}
+                  >
+                    {selectedClientForDetails.status === 'ativo' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                    {selectedClientForDetails.status === 'ativo' ? 'Acesso Ativo (Liberado)' : 'Acesso Bloqueado'}
+                  </button>
+                </div>
+
+                <div className="sm:text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleOpenPasswordResetModal(selectedClientForDetails);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#5A7D6C] text-white rounded-xl text-xs font-bold hover:bg-[#476356]"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Redefinir Senha
+                  </button>
+                </div>
+              </div>
+
               {/* Contact & Address Card */}
-              <div className="bg-[#FAFBF9] rounded-xl p-4 border border-[#DFE5DA] grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="bg-white rounded-xl p-4 border border-[#DFE5DA] grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
                   <p className="font-bold text-[#5A7D6C] uppercase tracking-wider text-[10px] mb-1">Contatos Oficiais</p>
                   <p className="text-[#243029] font-medium flex items-center gap-1.5 mt-1">
@@ -1160,19 +1575,19 @@ export const CustomersView: React.FC = () => {
                     </span>
                   </p>
                   {selectedClientForDetails.address.referencePoint && (
-                    <p className="text-[11px] text-[#64736B] italic mt-1 bg-white p-1.5 rounded border border-[#DFE5DA]">
+                    <p className="text-[11px] text-[#64736B] italic mt-1 bg-[#FAFBF9] p-1.5 rounded border border-[#DFE5DA]">
                       <span className="font-semibold text-[#243029]">Ref:</span> {selectedClientForDetails.address.referencePoint}
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* 1. Requests and Service History */}
+              {/* Service History */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-[#243029] uppercase tracking-wider flex items-center gap-1.5">
                     <History className="w-4 h-4 text-[#5A7D6C]" />
-                    Histórico de Solicitações & Códigos de Confirmação
+                    Histórico de Solicitações & Ordens de Serviço
                   </h4>
                   <span className="text-xs font-medium text-[#64736B]">
                     {requests.filter(r => r.clientId === selectedClientForDetails.id || r.clientEmail.toLowerCase() === selectedClientForDetails.email.toLowerCase()).length} serviço(s)
@@ -1195,81 +1610,60 @@ export const CustomersView: React.FC = () => {
 
                   return (
                     <div className="space-y-2.5">
-                      {clientReqs.map(req => {
-                        const statusColors: Record<RequestStatus, string> = {
-                          pendente: 'bg-amber-100 text-amber-900 border-amber-200',
-                          alocado: 'bg-blue-100 text-blue-900 border-blue-200',
-                          a_caminho: 'bg-indigo-100 text-indigo-900 border-indigo-200',
-                          em_execucao: 'bg-emerald-100 text-emerald-900 border-emerald-300 animate-pulse',
-                          pausado: 'bg-slate-100 text-slate-800 border-slate-200',
-                          concluido: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                          cancelado: 'bg-rose-50 text-rose-800 border-rose-200',
-                        };
-
-                        return (
-                          <div 
-                            key={req.id} 
-                            className="bg-white rounded-xl p-3.5 border border-[#DFE5DA] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                          >
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-[#243029] font-mono">{req.code}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColors[req.status]}`}>
-                                  {req.status.replace('_', ' ').toUpperCase()}
-                                </span>
-                                <span className="text-[11px] text-[#64736B]">
-                                  {formatDate(req.scheduledDate)} ({req.scheduledPeriod})
-                                </span>
-                              </div>
-
-                              <p className="text-[#243029] font-medium mt-1">
-                                {req.serviceType === 'ambos' ? 'Limpeza Completa + Organização' : req.serviceType.toUpperCase()}
-                                {req.organizationFormat && ` • Formato: ${req.organizationFormat.toUpperCase()}`}
-                              </p>
-
-                              <div className="text-[11px] text-[#64736B] flex items-center gap-2 mt-1">
-                                <span>Profissional: <strong className="text-[#243029]">{req.assignedStaffName || 'Pendente de alocação'}</strong></span>
-                                <span>•</span>
-                                <span>Valor: <strong className="text-[#243029]">{formatCurrency(req.estimatedValue)}</strong></span>
-                              </div>
+                      {clientReqs.map(req => (
+                        <div 
+                          key={req.id} 
+                          className="bg-white rounded-xl p-3.5 border border-[#DFE5DA] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-[#243029] font-mono">{req.code}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF1ED] text-[#446153] border border-[#5A7D6C]/20">
+                                {req.status.replace('_', ' ').toUpperCase()}
+                              </span>
+                              <span className="text-[11px] text-[#64736B]">
+                                {formatDate(req.scheduleDate)} ({req.scheduleTime})
+                              </span>
                             </div>
 
-                            {/* Security Confirmation Code for this service */}
-                            <div className="bg-[#EBF1ED] border border-[#5A7D6C]/30 rounded-xl px-3 py-2 text-center shrink-0">
-                              <span className="text-[9px] font-bold text-[#5A7D6C] uppercase block tracking-wider">
-                                Código de Segurança
-                              </span>
-                              <span className="font-mono text-base font-black text-[#243029] tracking-widest">
-                                {req.confirmationCode || '----'}
-                              </span>
-                              {req.codeValidatedAt && (
-                                <span className="text-[9px] text-emerald-700 block font-semibold">
-                                  ✓ Validado no local
-                                </span>
-                              )}
+                            <p className="text-[#243029] font-medium mt-1">
+                              {req.serviceType === 'ambos' ? 'Limpeza Completa + Organização' : req.serviceType.toUpperCase()}
+                              {req.organizationFormat && ` • Formato: ${req.organizationFormat.toUpperCase()}`}
+                            </p>
+
+                            <div className="text-[11px] text-[#64736B] flex items-center gap-2 mt-1">
+                              <span>Profissional: <strong className="text-[#243029]">{req.assignedStaffName || 'Pendente de alocação'}</strong></span>
+                              <span>•</span>
+                              <span>Valor: <strong className="text-[#243029]">{formatCurrency(req.price)}</strong></span>
                             </div>
                           </div>
-                        );
-                      })}
+
+                          {/* Security Confirmation Code */}
+                          <div className="bg-[#EBF1ED] border border-[#5A7D6C]/30 rounded-xl px-3 py-2 text-center shrink-0">
+                            <span className="text-[9px] font-bold text-[#5A7D6C] uppercase block tracking-wider">
+                              Código Confirmação
+                            </span>
+                            <span className="font-mono text-base font-black text-[#243029] tracking-widest">
+                              {req.confirmationCode || '----'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   );
                 })()}
               </div>
 
-              {/* 2. Operational Notes & Staff Evaluations */}
+              {/* Operational Notes */}
               <div className="space-y-3 pt-3 border-t border-[#DFE5DA]">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-[#243029] uppercase tracking-wider flex items-center gap-1.5">
                       <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                      Avaliações da Equipe Operacional (Comportamento & Local)
+                      Avaliações da Equipe Operacional
                     </h4>
-                    <p className="text-[11px] text-[#64736B]">
-                      Notas técnicas registradas pelos profissionais de campo para instruir futuras escalas.
-                    </p>
                   </div>
                   <button
-                    id="btn-add-operational-note"
                     type="button"
                     onClick={() => setIsAddNoteModalOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EBF1ED] text-[#446153] hover:bg-[#5A7D6C] hover:text-white rounded-lg text-xs font-bold transition-colors"
@@ -1285,191 +1679,48 @@ export const CustomersView: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    {selectedClientForDetails.operationalNotes.map((note) => {
-                      const behaviorColors = {
-                        excelente: 'bg-emerald-100 text-emerald-800',
-                        bom: 'bg-blue-100 text-blue-800',
-                        neutro: 'bg-slate-100 text-slate-800',
-                        dificil: 'bg-amber-100 text-amber-800',
-                        critico: 'bg-rose-100 text-rose-800',
-                      };
-
-                      const propertyColors = {
-                        impecavel: 'bg-emerald-100 text-emerald-800',
-                        adequado: 'bg-blue-100 text-blue-800',
-                        desafiador: 'bg-amber-100 text-amber-800',
-                        precario: 'bg-rose-100 text-rose-800',
-                      };
-
-                      const noteRating = note.rating || note.clientBehaviorRating || 5;
-                      const behavior = note.behaviorEvaluation || 'bom';
-                      const condition = note.propertyCondition || 'adequado';
-                      const author = note.staffName || note.authorName || 'Equipe';
-
-                      return (
-                        <div key={note.id} className="bg-[#FAFBF9] rounded-xl p-3.5 border border-[#DFE5DA] text-xs space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="flex text-amber-500">
-                                {[...Array(5)].map((_, i) => (
-                                  <Star 
-                                    key={i} 
-                                    className={`w-3.5 h-3.5 ${i < noteRating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} 
-                                  />
-                                ))}
-                              </div>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${behaviorColors[behavior] || 'bg-slate-100 text-slate-800'}`}>
-                                Cliente: {behavior.toUpperCase()}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${propertyColors[condition] || 'bg-slate-100 text-slate-800'}`}>
-                                Imóvel: {condition.toUpperCase()}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-[#86958E]">
-                              {formatDate(note.date)} • Por {author}
-                            </span>
-                          </div>
-
-                          <p className="text-[#243029] italic bg-white p-2.5 rounded-lg border border-[#DFE5DA]">
-                            "{note.comment}"
-                          </p>
-
-                          {note.tags && note.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {note.tags.map((tag, idx) => (
-                                <span key={idx} className="px-2 py-0.5 bg-[#EBF1ED] text-[#446153] rounded text-[10px] font-medium">
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                    {selectedClientForDetails.operationalNotes.map((note) => (
+                      <div key={note.id} className="bg-[#FAFBF9] p-3.5 rounded-xl border border-[#DFE5DA] space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#243029]">{note.authorName || 'Equipe Operacional'}</span>
+                          <span className="text-[11px] text-[#64736B]">{formatDate(note.date)}</span>
                         </div>
-                      );
-                    })}
+                        <p className="text-[#243029]">{note.comment}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-
-            <div className="p-4 border-t border-[#DFE5DA] bg-[#F4F6F1] flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  handleOpenForm(selectedClientForDetails);
-                  setSelectedClientForDetails(null);
-                }}
-                className="text-xs font-bold text-[#5A7D6C] hover:underline flex items-center gap-1"
-              >
-                <Edit3 className="w-3.5 h-3.5" /> Editar Cadastro
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedClientForDetails(null)}
-                className="px-4 py-2 bg-white border border-[#DFE5DA] text-xs font-semibold rounded-xl text-[#243029] hover:bg-[#EBF1ED]"
-              >
-                Fechar Detalhes
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= MODAL ADICIONAR NOTA OPERACIONAL ================= */}
-      {isAddNoteModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full border border-[#DFE5DA] shadow-2xl p-5 space-y-4">
+      {/* ================= MODAL DE NOVA AVALIAÇÃO OPERACIONAL ================= */}
+      {isAddNoteModalOpen && selectedClientForDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#DFE5DA] shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#DFE5DA] pb-3">
-              <div className="flex items-center gap-2">
-                <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-                <h4 className="text-sm font-bold text-[#243029]">Registrar Avaliação Técnica</h4>
-              </div>
+              <h3 className="text-sm font-bold text-[#243029]">Nova Avaliação Operacional</h3>
               <button
                 type="button"
                 onClick={() => setIsAddNoteModalOpen(false)}
-                className="p-1 text-[#86958E] hover:text-[#243029]"
+                className="p-1 text-[#86958E] hover:text-[#243029] rounded-lg"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveOperationalNote} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-[#243029] mb-1">Nota Geral (1 a 5 estrelas)</label>
-                <select
-                  value={newNoteData.rating}
-                  onChange={(e) => setNewNoteData({ ...newNoteData, rating: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                >
-                  <option value={5}>5 Estrelas - Excelente</option>
-                  <option value={4}>4 Estrelas - Bom</option>
-                  <option value={3}>3 Estrelas - Neutro/Regular</option>
-                  <option value={2}>2 Estrelas - Desafiador</option>
-                  <option value={1}>1 Estrela - Crítico</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-[#243029] mb-1">Comportamento</label>
-                  <select
-                    value={newNoteData.behaviorEvaluation}
-                    onChange={(e: any) => setNewNoteData({ ...newNoteData, behaviorEvaluation: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                  >
-                    <option value="excelente">Excelente</option>
-                    <option value="bom">Bom</option>
-                    <option value="neutro">Neutro</option>
-                    <option value="dificil">Difícil</option>
-                    <option value="critico">Crítico</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-[#243029] mb-1">Condição do Imóvel</label>
-                  <select
-                    value={newNoteData.propertyCondition}
-                    onChange={(e: any) => setNewNoteData({ ...newNoteData, propertyCondition: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                  >
-                    <option value="impecavel">Impecável</option>
-                    <option value="adequado">Adequado</option>
-                    <option value="desafiador">Desafiador</option>
-                    <option value="precario">Precário</option>
-                  </select>
-                </div>
-              </div>
-
+            <form onSubmit={handleSaveOperationalNote} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-[#243029] mb-1">
                   Parecer Técnico / Comentário da Equipe <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Ex: Imóvel com acesso fácil, cliente cordial, forneceu produtos adequados e água para a equipe..."
+                  placeholder="Ex: Imóvel com acesso fácil, cliente cordial, forneceu produtos adequados..."
                   value={newNoteData.comment}
                   onChange={(e) => setNewNoteData({ ...newNoteData, comment: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#243029] mb-1">Tags (separadas por vírgula)</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Pontual, Tem Pets, Exige Cuidado Especial"
-                  value={newNoteData.tags}
-                  onChange={(e) => setNewNoteData({ ...newNoteData, tags: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#243029] mb-1">Avaliador / Colaborador</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Carlos Mendes (Supervisor Operacional)"
-                  value={newNoteData.staffName}
-                  onChange={(e) => setNewNoteData({ ...newNoteData, staffName: e.target.value })}
                   className="w-full px-3 py-2 bg-[#F4F6F1] border border-[#DFE5DA] rounded-xl focus:outline-none focus:border-[#5A7D6C]"
                 />
               </div>
@@ -1507,7 +1758,7 @@ export const CustomersView: React.FC = () => {
                 Excluir Cadastro de {clientToDelete.name}?
               </h3>
               <p className="text-xs text-[#64736B] mt-1">
-                Esta ação removerá o cliente da base cadastral.
+                Esta ação removerá o cliente da base cadastral no Supabase.
               </p>
             </div>
 
@@ -1521,7 +1772,7 @@ export const CustomersView: React.FC = () => {
               </div>
             ) : (
               <p className="text-xs text-[#64736B] bg-[#FAFBF9] p-3 rounded-xl border border-[#DFE5DA]">
-                Nenhum serviço ativo detectado. O cliente pode ser removido com segurança. O histórico anterior será desvinculado.
+                Nenhum serviço ativo detectado. O cliente pode ser removido com segurança.
               </p>
             )}
 

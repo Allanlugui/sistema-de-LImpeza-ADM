@@ -32,6 +32,8 @@ export const INITIAL_CLIENTS: Client[] = [
       referencePoint: 'Próximo à estação Moema e Padaria Suíça'
     },
     status: 'vip',
+    recoveryCode: '748291',
+    password: 'Cliente@2025',
     createdAt: '2024-06-15T10:00:00.000Z',
     notes: 'Cliente VIP recorrente. Muito atenciosa, prefere comunicação direta no WhatsApp e uso de cabides aveludados.',
     preferredServiceType: 'ambos',
@@ -82,6 +84,8 @@ export const INITIAL_CLIENTS: Client[] = [
       referencePoint: 'A 2 quadras da Avenida Paulista'
     },
     status: 'ativo',
+    recoveryCode: '391054',
+    password: 'Cliente@2025',
     createdAt: '2024-09-02T14:30:00.000Z',
     notes: 'Trabalha em home office durante o período da tarde, prefere execuções matinais silenciosas na área do quarto.',
     preferredServiceType: 'limpeza',
