@@ -382,10 +382,10 @@ export const AllocationLiveTrackingView: React.FC = () => {
                       type="button"
                       onClick={() => setCustomerAppReqId(req.id)}
                       className="px-2.5 py-1.5 bg-white hover:bg-[#EEF3ED] text-[#2C473A] rounded-lg border border-[#DFE5DA] font-semibold text-[11px] flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                      title="Abrir Simulador do App do Cliente para ver o código na tela do cliente"
+                      title="Abrir PWA do Cliente para ver o código de segurança e status do atendimento"
                     >
                       <Smartphone className="w-3.5 h-3.5 text-[#5A7D6C]" />
-                      <span>Ver no App do Cliente</span>
+                      <span>Ver no PWA do Cliente</span>
                     </button>
 
                     {assignedStaff && (
@@ -393,7 +393,7 @@ export const AllocationLiveTrackingView: React.FC = () => {
                         type="button"
                         onClick={() => setStaffAppStaffId(assignedStaff.id)}
                         className="px-2.5 py-1.5 bg-white hover:bg-[#EEF3ED] text-[#2C473A] rounded-lg border border-[#DFE5DA] font-semibold text-[11px] flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                        title="Abrir Simulador do App Operacional da Equipe para validar o código e operar"
+                        title="Abrir App Operacional da Equipe para validar o código e registrar execução"
                       >
                         <HardHat className="w-3.5 h-3.5 text-[#C88346]" />
                         <span>Abrir no App da Equipe</span>

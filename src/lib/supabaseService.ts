@@ -122,6 +122,7 @@ export function mapDbToClient(row: any, operationalNotes: ClientOperationalEvalu
   return {
     id: row.id,
     name: row.nome || row.name || 'Cliente',
+    photoUrl: row.foto_url || row.photoUrl || undefined,
     documentType: (row.tipo_documento || row.documentType || 'CPF') as DocumentType,
     documentNumber: row.documento || row.documentNumber || '',
     email: row.email || '',
@@ -153,6 +154,7 @@ export function mapClientToDb(c: Partial<Client>): Record<string, any> {
 
   if (c.id) dbRow.id = c.id;
   if (c.name !== undefined) dbRow.nome = c.name;
+  if (c.photoUrl !== undefined) dbRow.foto_url = c.photoUrl;
   if (c.documentType !== undefined) dbRow.tipo_documento = c.documentType;
   if (c.documentNumber !== undefined) dbRow.documento = c.documentNumber;
   if (c.email !== undefined) dbRow.email = c.email;

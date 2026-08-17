@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-react';
 import { formatCPF, isValidCPF, formatPhone, getWhatsAppLink, formatDateBR } from '../utils/formatters';
+import { PhotoUploadField } from './PhotoUploadField';
 
 export const CollaboratorsView: React.FC = () => {
   const { 
@@ -65,7 +66,7 @@ export const CollaboratorsView: React.FC = () => {
     setPhone('');
     setRole('Diarista Profissional');
     setStatus('ativo');
-    setPhotoUrl('https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80');
+    setPhotoUrl('');
     setSpecialtiesText('Limpeza fina, Organização de armários, Higienização geral');
     setNotes('');
     setEmergencyContact('');
@@ -120,7 +121,7 @@ export const CollaboratorsView: React.FC = () => {
         phone: formatPhone(phone),
         role,
         status,
-        photoUrl: photoUrl.trim() || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+        photoUrl: photoUrl.trim(),
         specialties: specialtiesList,
         notes: notes.trim(),
         emergencyContact: emergencyContact.trim(),
@@ -134,7 +135,7 @@ export const CollaboratorsView: React.FC = () => {
         phone: formatPhone(phone),
         role,
         status,
-        photoUrl: photoUrl.trim() || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+        photoUrl: photoUrl.trim(),
         hireDate: new Date().toISOString().split('T')[0],
         specialties: specialtiesList,
         notes: notes.trim(),
@@ -265,11 +266,17 @@ export const CollaboratorsView: React.FC = () => {
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={collab.photoUrl}
-                      alt={collab.name}
-                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-[#DFE5DA] shadow-2xs"
-                    />
+                    <div className="w-12 h-12 rounded-xl bg-[#EBF1ED] ring-2 ring-[#DFE5DA] shadow-2xs overflow-hidden shrink-0 flex items-center justify-center text-[#446153] font-bold text-sm">
+                      {collab.photoUrl ? (
+                        <img
+                          src={collab.photoUrl}
+                          alt={collab.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span>{collab.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
                     <div>
                       <h3 className="text-sm font-bold text-[#243029]">{collab.name}</h3>
                       <span className="text-xs font-medium text-[#5A7D6C] block">{collab.role}</span>
@@ -558,19 +565,13 @@ export const CollaboratorsView: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#243029] mb-1">
-                  URL da Foto de Perfil
-                </label>
-                <input
-                  id="input-collab-photo"
-                  type="url"
-                  value={photoUrl}
-                  onChange={(e) => setPhotoUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-[#DFE5DA] focus:outline-none focus:ring-2 focus:ring-[#5A7D6C] text-[#243029]"
-                />
-              </div>
+              <PhotoUploadField
+                id="collab-photo-upload"
+                label="Foto de Perfil do Colaborador"
+                photoUrl={photoUrl}
+                onPhotoChange={(url) => setPhotoUrl(url)}
+                fallbackName={name || 'Colaborador'}
+              />
 
               <div>
                 <label className="block text-xs font-semibold text-[#243029] mb-1">

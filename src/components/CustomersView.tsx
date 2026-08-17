@@ -43,8 +43,11 @@ import {
   UserPlus
 } from 'lucide-react';
 
+import { PhotoUploadField } from './PhotoUploadField';
+
 interface ClientFormData {
   name: string;
+  photoUrl: string;
   documentType: 'CPF' | 'RG';
   documentNumber: string;
   email: string;
@@ -67,6 +70,7 @@ interface ClientFormData {
 
 const INITIAL_FORM_DATA: ClientFormData = {
   name: '',
+  photoUrl: '',
   documentType: 'CPF',
   documentNumber: '',
   email: '',
@@ -166,6 +170,7 @@ export const CustomersView: React.FC = () => {
       setEditingClient(client);
       setFormData({
         name: client.name,
+        photoUrl: client.photoUrl || '',
         documentType: client.documentType || 'CPF',
         documentNumber: client.documentNumber || '',
         email: client.email,
@@ -265,6 +270,7 @@ export const CustomersView: React.FC = () => {
     if (editingClient) {
       updateClient(editingClient.id, {
         name: formData.name.trim(),
+        photoUrl: formData.photoUrl,
         documentType: formData.documentType,
         documentNumber: formData.documentNumber.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -285,6 +291,7 @@ export const CustomersView: React.FC = () => {
     } else {
       addClient({
         name: formData.name.trim(),
+        photoUrl: formData.photoUrl,
         documentType: formData.documentType,
         documentNumber: formData.documentNumber.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -559,18 +566,29 @@ export const CustomersView: React.FC = () => {
                     <tr key={client.id} className="hover:bg-[#FAFBF9] transition-colors">
                       {/* Name and Doc */}
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-[#243029] flex items-center gap-2">
-                          <span>{client.name}</span>
-                          {client.status === 'ativo' ? (
-                            <span className="w-2 h-2 rounded-full bg-emerald-500" title="Cliente Ativo" />
-                          ) : (
-                            <span className="w-2 h-2 rounded-full bg-slate-400" title="Cliente Inativo" />
-                          )}
-                        </div>
-                        <div className="text-xs text-[#64736B] flex items-center gap-1.5 mt-0.5">
-                          <span className="px-1.5 py-0.5 bg-[#EBF1ED] text-[#446153] rounded font-mono text-[10px] font-bold">
-                            {client.documentType || 'CPF'}: {client.documentNumber ? (client.documentType === 'RG' ? formatRG(client.documentNumber) : formatCPF(client.documentNumber)) : 'Não inf.'}
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#EBF1ED] border border-[#DFE5DA] overflow-hidden shrink-0 flex items-center justify-center text-[#446153] font-bold text-sm shadow-2xs">
+                            {client.photoUrl ? (
+                              <img src={client.photoUrl} alt={client.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{client.name.charAt(0).toUpperCase()}</span>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[#243029] flex items-center gap-2">
+                              <span>{client.name}</span>
+                              {client.status === 'ativo' ? (
+                                <span className="w-2 h-2 rounded-full bg-emerald-500" title="Cliente Ativo" />
+                              ) : (
+                                <span className="w-2 h-2 rounded-full bg-slate-400" title="Cliente Inativo" />
+                              )}
+                            </div>
+                            <div className="text-xs text-[#64736B] flex items-center gap-1.5 mt-0.5">
+                              <span className="px-1.5 py-0.5 bg-[#EBF1ED] text-[#446153] rounded font-mono text-[10px] font-bold">
+                                {client.documentType || 'CPF'}: {client.documentNumber ? (client.documentType === 'RG' ? formatRG(client.documentNumber) : formatCPF(client.documentNumber)) : 'Não inf.'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </td>
 
@@ -714,6 +732,15 @@ export const CustomersView: React.FC = () => {
                   <UserCheck className="w-3.5 h-3.5" />
                   Dados Pessoais & Documentação
                 </h4>
+
+                {/* Photo Upload (Drag and Drop / File Picker / Camera) */}
+                <PhotoUploadField
+                  id="client-photo-upload"
+                  label="Foto de Perfil do Cliente"
+                  photoUrl={formData.photoUrl}
+                  onPhotoChange={(url) => setFormData({ ...formData, photoUrl: url })}
+                  fallbackName={formData.name || 'Cliente'}
+                />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Name */}
@@ -1073,8 +1100,12 @@ export const CustomersView: React.FC = () => {
             {/* Modal Header */}
             <div className="p-5 border-b border-[#DFE5DA] flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-[#5A7D6C] text-white flex items-center justify-center font-bold text-lg">
-                  {selectedClientForDetails.name.charAt(0)}
+                <div className="w-12 h-12 rounded-xl bg-[#5A7D6C] text-white flex items-center justify-center font-bold text-lg overflow-hidden border border-[#DFE5DA] shadow-xs">
+                  {selectedClientForDetails.photoUrl ? (
+                    <img src={selectedClientForDetails.photoUrl} alt={selectedClientForDetails.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{selectedClientForDetails.name.charAt(0).toUpperCase()}</span>
+                  )}
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#243029] flex items-center gap-2">

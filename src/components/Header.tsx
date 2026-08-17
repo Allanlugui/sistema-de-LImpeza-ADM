@@ -104,17 +104,17 @@ export const Header: React.FC = () => {
               </button>
             </div>
 
-            {/* Quick App Simulator Launchers */}
+            {/* Client PWA & Staff Operational App Quick Launchers */}
             <div className="flex items-center gap-1.5 bg-[#F4F6F1] p-1 rounded-xl border border-[#DFE5DA]">
               <button
                 id="btn-header-open-customer-app"
                 type="button"
                 onClick={() => setShowCustomerApp(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-[#2C473A] hover:bg-[#EEF3ED] border border-[#DFE5DA] shadow-2xs transition-all cursor-pointer"
-                title="Abrir Simulador do App do Cliente (exibe Código de Confirmação)"
+                title="Abrir PWA do Cliente (Portal de Autoatendimento e Código de Segurança)"
               >
                 <Smartphone className="w-3.5 h-3.5 text-[#5A7D6C]" />
-                <span className="hidden md:inline">App do</span>
+                <span className="hidden md:inline">PWA</span>
                 <span>Cliente</span>
                 <span className="w-2 h-2 rounded-full bg-[#5A7D6C]"></span>
               </button>
@@ -124,10 +124,10 @@ export const Header: React.FC = () => {
                 type="button"
                 onClick={() => setShowStaffApp(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-[#2C473A] hover:bg-[#EEF3ED] border border-[#DFE5DA] shadow-2xs transition-all cursor-pointer"
-                title="Abrir Simulador do App Operacional da Equipe (com validação de código de 4 dígitos)"
+                title="Abrir App Operacional da Equipe de Campo (Validação de Código e Execução)"
               >
                 <HardHat className="w-3.5 h-3.5 text-[#C88346]" />
-                <span className="hidden md:inline">App da</span>
+                <span className="hidden md:inline">App</span>
                 <span>Equipe</span>
                 <span className="w-2 h-2 rounded-full bg-[#C88346]"></span>
               </button>

@@ -40,6 +40,7 @@ export interface ClientOperationalEvaluation {
 export interface Client {
   id: string;
   name: string;
+  photoUrl?: string;
   documentType: DocumentType;
   documentNumber: string;
   email: string;

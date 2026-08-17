@@ -287,59 +287,6 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
     setIsNewModalOpen(false);
   };
 
-  // Quick simulation of a real-time incoming request from a client app
-  const handleSimulateRealtimeIncomingRequest = () => {
-    const mockClients = [
-      { name: 'Dra. Gabriela Antunes', email: 'gabriela.antunes@med.br', phone: '(11) 98765-4321', street: 'Rua Bela Cintra', num: '1420', comp: 'Apto 112', neigh: 'Consolação', city: 'São Paulo', cep: '01415-001', rooms: 3, baths: 2, area: 130, price: 520, svc: 'ambos' as ServiceType, format: 'personalizada' as OrgFormat, zones: ['Closet Master', 'Despensa Gourmet'], notes: 'Preferência por dobraduras verticais em colmeias' },
-      { name: 'Dr. Rodrigo Menezes', email: 'rodrigo.menezes@adv.br', phone: '(11) 97654-3210', street: 'Av. Brigadeiro Faria Lima', num: '3200', comp: 'Conj. 44', neigh: 'Itaim Bibi', city: 'São Paulo', cep: '04538-132', rooms: 4, baths: 3, area: 180, price: 650, svc: 'organizacao' as ServiceType, format: 'padrao_empresa' as OrgFormat, zones: ['Home Office', 'Armários Embutidos'], notes: 'Padronização 5S com foco em arquivos e armários' },
-      { name: 'Mariana Duarte', email: 'mariana.duarte@studio.com', phone: '(11) 96543-2109', street: 'Rua Harmonia', num: '580', comp: 'Casa 2', neigh: 'Vila Madalena', city: 'São Paulo', cep: '05435-000', rooms: 2, baths: 1, area: 85, price: 340, svc: 'limpeza' as ServiceType, format: 'padrao_empresa' as OrgFormat, zones: ['Geral'], notes: 'Possui 1 gatinho manso' },
-    ];
-
-    const pick = mockClients[Math.floor(Math.random() * mockClients.length)];
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + 1 + Math.floor(Math.random() * 3));
-    const formattedDate = targetDate.toISOString().split('T')[0];
-
-    addRequest({
-      clientName: pick.name,
-      clientEmail: pick.email,
-      clientPhone: pick.phone,
-      clientWhatsapp: pick.phone,
-      address: {
-        street: pick.street,
-        number: pick.num,
-        complement: pick.comp,
-        neighborhood: pick.neigh,
-        city: pick.city,
-        state: 'SP',
-        zipCode: pick.cep,
-        referencePoint: 'Portaria 24h com identificação prévia',
-      },
-      serviceType: pick.svc,
-      organizationFormat: pick.format,
-      orgDetails: {
-        methodology: pick.format === 'personalizada' ? 'Personalizado aos Hábitos do Cliente' : 'Padrão 5S da Empresa',
-        selectedZones: pick.zones,
-        customNotes: pick.notes,
-        organizerProductsNeeded: pick.format === 'personalizada' ? ['Colmeias P e M', 'Cestos organizadores'] : []
-      },
-      propertyDetails: {
-        rooms: pick.rooms,
-        bathrooms: pick.baths,
-        approxAreaM2: pick.area,
-        hasPets: pick.notes.includes('gatinho'),
-        petDetails: pick.notes.includes('gatinho') ? '1 gato manso' : undefined,
-      },
-      scheduleDate: formattedDate,
-      scheduleTime: '09:00',
-      estimatedDurationHours: pick.svc === 'ambos' ? 7 : 5,
-      price: pick.price,
-      status: 'pendente',
-      priority: 'alta',
-      clientNotes: pick.notes,
-    });
-  };
-
   const handleConfirmAllocation = () => {
     if (!allocatingRequest || !selectedStaffId) return;
     allocateStaff(allocatingRequest.id, selectedStaffId);
@@ -508,19 +455,19 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EBF6EE] text-[#236838] border border-[#C3E6CC] text-xs font-semibold">
             <span className="w-2 h-2 rounded-full bg-[#236838] animate-ping" />
             <span className="w-2 h-2 rounded-full bg-[#236838] -ml-4" />
-            <span>Tempo Real Ativo</span>
+            <span>Supabase Realtime Ativo</span>
           </div>
 
-          {/* Quick Simulation Button for Ingestion */}
+          {/* Open Customer PWA */}
           <button
-            id="btn-simulate-incoming-request"
+            id="btn-open-customer-pwa"
             type="button"
-            onClick={handleSimulateRealtimeIncomingRequest}
+            onClick={() => setCustomerAppReqId(requests[0]?.id || '')}
             className="px-3 py-2 bg-[#F4F6F1] hover:bg-[#EEF3ED] text-[#2C473A] border border-[#DFE5DA] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-            title="Simula a chegada instantânea de uma nova solicitação vinda do App do Cliente"
+            title="Abrir o PWA do Cliente para autoatendimento, acompanhamento e criação de pedidos"
           >
-            <Zap className="w-3.5 h-3.5 text-[#D4A373]" />
-            <span>Simular Chegada em Tempo Real</span>
+            <Smartphone className="w-3.5 h-3.5 text-[#5A7D6C]" />
+            <span>PWA do Cliente</span>
           </button>
 
           {/* Create Request */}
@@ -1270,7 +1217,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
                           type="button"
                           onClick={() => setCustomerAppReqId(req.id)}
                           className="p-1 text-[#5A7D6C] hover:text-[#243029] hover:bg-[#EEF3ED] rounded"
-                          title="Simular App do Cliente"
+                          title="Abrir no PWA do Cliente"
                         >
                           <Smartphone className="w-3.5 h-3.5" />
                         </button>
@@ -1349,11 +1296,17 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
                           onChange={() => setSelectedStaffId(staff.id)}
                           className="w-4 h-4 text-[#5A7D6C] border-[#DFE5DA] focus:ring-[#5A7D6C]"
                         />
-                        <img
-                          src={staff.photoUrl}
-                          alt={staff.name}
-                          className="w-9 h-9 rounded-lg object-cover ring-1 ring-[#DFE5DA]"
-                        />
+                        <div className="w-9 h-9 rounded-lg bg-[#DFE5DA] overflow-hidden shrink-0 flex items-center justify-center text-[#3D564A] font-bold text-xs ring-1 ring-[#DFE5DA]">
+                          {staff.photoUrl ? (
+                            <img
+                              src={staff.photoUrl}
+                              alt={staff.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span>{staff.name.charAt(0).toUpperCase()}</span>
+                          )}
+                        </div>
                         <div>
                           <p className="text-xs font-bold text-[#243029]">{staff.name}</p>
                           <p className="text-[11px] text-[#6B7B70]">{staff.role} • ★ {staff.rating.toFixed(1)}</p>
