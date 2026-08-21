@@ -13,7 +13,13 @@ import {
   StaffStatus,
   FeedbackType,
   FeedbackStatus,
-  ClientStatus
+  ClientStatus,
+  SystemNotification,
+  NotificationAcknowledgement,
+  NotificationTarget,
+  NotificationChannel,
+  NotificationPriority,
+  NotificationStatus
 } from '../types';
 
 export function generateUUID(): string {
@@ -45,10 +51,31 @@ type SchemaDialect = 'en' | 'pt';
 
 const detectedDialects: Record<string, SchemaDialect> = {
   colaboradores: 'pt',
-  clientes: 'en',
-  solicitacoes_servico: 'en',
-  avaliacoes_feedback: 'en'
+  clientes: 'pt',
+  solicitacoes_servico: 'pt',
+  avaliacoes_feedback: 'pt',
+  notificacoes_sistema: 'pt'
 };
+
+function isSchemaColumnError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || '').toLowerCase();
+  const details = String(err.details || '').toLowerCase();
+  const hint = String(err.hint || '').toLowerCase();
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    code === 'PGRST200' ||
+    code === '42883' ||
+    msg.includes('column') ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find') ||
+    msg.includes('does not exist') ||
+    details.includes('column') ||
+    hint.includes('column')
+  );
+}
 
 // 1. CLIENT MAPPERS
 export function mapDbToClient(row: any, operationalNotes: ClientOperationalEvaluation[] = []): Client {
@@ -396,6 +423,71 @@ export function mapFeedbackToDb(f: Partial<CustomerFeedback>, dialect: SchemaDia
   return dbRow;
 }
 
+// 5. SYSTEM NOTIFICATION MAPPERS
+export function mapDbToNotification(row: any): SystemNotification {
+  return {
+    id: row.id,
+    title: row.title || row.titulo || 'Notificação do Sistema',
+    message: row.message || row.mensagem || '',
+    target: (row.target || row.destinatario || 'all') as NotificationTarget,
+    channel: (row.channel || row.canal || 'broadcast') as NotificationChannel,
+    priority: (row.priority || row.prioridade || 'media') as NotificationPriority,
+    sender: row.sender || row.remetente || 'Administração Central',
+    senderRole: row.sender_role || row.cargo_remetente || 'Admin',
+    category: row.category || row.categoria || 'Geral',
+    metadata: row.metadata || row.metadados || {},
+    createdAt: row.created_at || new Date().toISOString(),
+    status: (row.status || 'dispatched') as NotificationStatus,
+    acknowledgedBy: Array.isArray(row.acknowledged_by || row.confirmacoes)
+      ? (row.acknowledged_by || row.confirmacoes).map((ack: any) => ({
+          recipientId: ack.recipientId || ack.id || '',
+          recipientName: ack.recipientName || ack.nome || 'Usuário',
+          recipientType: ack.recipientType || ack.tipo || 'cliente',
+          acknowledgedAt: ack.acknowledgedAt || ack.data_hora || new Date().toISOString(),
+          deviceInfo: ack.deviceInfo || ack.dispositivo || 'Navegador Web',
+          responseNote: ack.responseNote || ack.nota || '',
+          latencyMs: ack.latencyMs || ack.latencia_ms || 0
+        }))
+      : []
+  };
+}
+
+export function mapNotificationToDb(n: Partial<SystemNotification>, dialect: SchemaDialect = 'pt'): any {
+  const dbRow: any = {};
+
+  if (dialect === 'pt') {
+    if (n.id !== undefined) dbRow.id = n.id;
+    if (n.title !== undefined) dbRow.titulo = n.title;
+    if (n.message !== undefined) dbRow.mensagem = n.message;
+    if (n.target !== undefined) dbRow.destinatario = n.target;
+    if (n.channel !== undefined) dbRow.canal = n.channel;
+    if (n.priority !== undefined) dbRow.prioridade = n.priority;
+    if (n.sender !== undefined) dbRow.remetente = n.sender;
+    if (n.senderRole !== undefined) dbRow.cargo_remetente = n.senderRole;
+    if (n.category !== undefined) dbRow.categoria = n.category;
+    if (n.metadata !== undefined) dbRow.metadados = n.metadata;
+    if (n.status !== undefined) dbRow.status = n.status;
+    if (n.acknowledgedBy !== undefined) dbRow.confirmacoes = n.acknowledgedBy;
+    if (n.createdAt !== undefined) dbRow.created_at = n.createdAt;
+  } else {
+    if (n.id !== undefined) dbRow.id = n.id;
+    if (n.title !== undefined) dbRow.title = n.title;
+    if (n.message !== undefined) dbRow.message = n.message;
+    if (n.target !== undefined) dbRow.target = n.target;
+    if (n.channel !== undefined) dbRow.channel = n.channel;
+    if (n.priority !== undefined) dbRow.priority = n.priority;
+    if (n.sender !== undefined) dbRow.sender = n.sender;
+    if (n.senderRole !== undefined) dbRow.sender_role = n.senderRole;
+    if (n.category !== undefined) dbRow.category = n.category;
+    if (n.metadata !== undefined) dbRow.metadata = n.metadata;
+    if (n.status !== undefined) dbRow.status = n.status;
+    if (n.acknowledgedBy !== undefined) dbRow.acknowledged_by = n.acknowledgedBy;
+    if (n.createdAt !== undefined) dbRow.created_at = n.createdAt;
+  }
+
+  return dbRow;
+}
+
 // --------------------------------------------------------------------------
 // CRUD SERVICE DIRECTLY TARGETING SUPABASE POSTGRESQL TABLES
 // --------------------------------------------------------------------------
@@ -530,11 +622,11 @@ export const SupabaseService = {
   // 5. Insert Request with auto-retry dialect switch
   async insertRequest(request: CustomerRequest): Promise<CustomerRequest> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.solicitacoes_servico || 'en';
+    let currentDialect = detectedDialects.solicitacoes_servico || 'pt';
     let dbRow = mapRequestToDb(request, currentDialect);
     
     let res = await supabase.from('solicitacoes_servico').insert(dbRow).select().single();
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.solicitacoes_servico = currentDialect;
       dbRow = mapRequestToDb(request, currentDialect);
@@ -551,12 +643,12 @@ export const SupabaseService = {
   // 6. Update Request with auto-retry dialect switch
   async updateRequest(id: string, updates: Partial<CustomerRequest>): Promise<boolean> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.solicitacoes_servico || 'en';
+    let currentDialect = detectedDialects.solicitacoes_servico || 'pt';
     let dbRow = mapRequestToDb(updates, currentDialect);
     delete dbRow.id;
     
     let res = await supabase.from('solicitacoes_servico').update(dbRow).eq('id', id);
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.solicitacoes_servico = currentDialect;
       dbRow = mapRequestToDb(updates, currentDialect);
@@ -589,11 +681,11 @@ export const SupabaseService = {
   // 8. Insert Client with auto-retry dialect switch
   async insertClient(client: Client): Promise<Client> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.clientes || 'en';
+    let currentDialect = detectedDialects.clientes || 'pt';
     let dbRow = mapClientToDb(client, currentDialect);
 
     let res = await supabase.from('clientes').insert(dbRow).select().single();
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.clientes = currentDialect;
       dbRow = mapClientToDb(client, currentDialect);
@@ -610,12 +702,12 @@ export const SupabaseService = {
   // 9. Update Client with auto-retry dialect switch
   async updateClient(id: string, updates: Partial<Client>): Promise<boolean> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.clientes || 'en';
+    let currentDialect = detectedDialects.clientes || 'pt';
     let dbRow = mapClientToDb(updates, currentDialect);
     delete dbRow.id;
 
     let res = await supabase.from('clientes').update(dbRow).eq('id', id);
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.clientes = currentDialect;
       dbRow = mapClientToDb(updates, currentDialect);
@@ -652,7 +744,7 @@ export const SupabaseService = {
     let dbRow = mapCollaboratorToDb(collab, currentDialect);
 
     let res = await supabase.from('colaboradores').insert(dbRow).select().single();
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'pt' ? 'en' : 'pt';
       detectedDialects.colaboradores = currentDialect;
       dbRow = mapCollaboratorToDb(collab, currentDialect);
@@ -674,7 +766,7 @@ export const SupabaseService = {
     delete dbRow.id;
 
     let res = await supabase.from('colaboradores').update(dbRow).eq('id', id);
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'pt' ? 'en' : 'pt';
       detectedDialects.colaboradores = currentDialect;
       dbRow = mapCollaboratorToDb(updates, currentDialect);
@@ -707,11 +799,11 @@ export const SupabaseService = {
   // 14. Insert Feedback with auto-retry dialect switch
   async insertFeedback(feedback: CustomerFeedback): Promise<CustomerFeedback> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.avaliacoes_feedback || 'en';
+    let currentDialect = detectedDialects.avaliacoes_feedback || 'pt';
     let dbRow = mapFeedbackToDb(feedback, currentDialect);
 
     let res = await supabase.from('avaliacoes_feedback').insert(dbRow).select().single();
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.avaliacoes_feedback = currentDialect;
       dbRow = mapFeedbackToDb(feedback, currentDialect);
@@ -728,12 +820,12 @@ export const SupabaseService = {
   // 15. Update Feedback with auto-retry dialect switch
   async updateFeedback(id: string, updates: Partial<CustomerFeedback>): Promise<boolean> {
     const supabase = getSupabase();
-    let currentDialect = detectedDialects.avaliacoes_feedback || 'en';
+    let currentDialect = detectedDialects.avaliacoes_feedback || 'pt';
     let dbRow = mapFeedbackToDb(updates, currentDialect);
     delete dbRow.id;
 
     let res = await supabase.from('avaliacoes_feedback').update(dbRow).eq('id', id);
-    if (res.error && res.error.code === '42703') {
+    if (res.error && isSchemaColumnError(res.error)) {
       currentDialect = currentDialect === 'en' ? 'pt' : 'en';
       detectedDialects.avaliacoes_feedback = currentDialect;
       dbRow = mapFeedbackToDb(updates, currentDialect);
@@ -776,6 +868,105 @@ export const SupabaseService = {
       await supabase.from('clientes').update({
         operational_notes: [note, ...existingNotes]
       }).eq('id', clientId);
+    }
+    return true;
+  },
+
+  // 17. Fetch System Notifications
+  async fetchNotifications(): Promise<SystemNotification[]> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('notificacoes_sistema')
+      .select('*');
+
+    if (error) {
+      console.warn('[Supabase Notice: fetchNotifications]', error.message);
+      return [];
+    }
+
+    if (data && data.length > 0) {
+      if (data[0].titulo !== undefined || data[0].mensagem !== undefined) {
+        detectedDialects.notificacoes_sistema = 'pt';
+      } else if (data[0].title !== undefined || data[0].message !== undefined) {
+        detectedDialects.notificacoes_sistema = 'en';
+      }
+    }
+
+    return (data || [])
+      .map(mapDbToNotification)
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  },
+
+  // 18. Insert System Notification with auto-retry dialect switch
+  async insertNotification(notification: SystemNotification): Promise<SystemNotification> {
+    const supabase = getSupabase();
+    let currentDialect = detectedDialects.notificacoes_sistema || 'pt';
+    let dbRow = mapNotificationToDb(notification, currentDialect);
+
+    let res = await supabase.from('notificacoes_sistema').insert(dbRow).select().single();
+    if (res.error && isSchemaColumnError(res.error)) {
+      currentDialect = currentDialect === 'en' ? 'pt' : 'en';
+      detectedDialects.notificacoes_sistema = currentDialect;
+      dbRow = mapNotificationToDb(notification, currentDialect);
+      res = await supabase.from('notificacoes_sistema').insert(dbRow).select().single();
+    }
+
+    if (res.error) {
+      console.warn('[Supabase Notice: insertNotification]', res.error.message);
+      // Return notification as is if table doesn't exist yet, it will propagate via Realtime Broadcast
+      return notification;
+    }
+    return mapDbToNotification(res.data);
+  },
+
+  // 19. Acknowledge Notification
+  async acknowledgeNotification(notificationId: string, ack: NotificationAcknowledgement): Promise<boolean> {
+    const supabase = getSupabase();
+    try {
+      const { data: existing } = await supabase
+        .from('notificacoes_sistema')
+        .select('*')
+        .eq('id', notificationId)
+        .single();
+
+      if (existing) {
+        const notif = mapDbToNotification(existing);
+        const alreadyAcked = notif.acknowledgedBy.some(a => a.recipientId === ack.recipientId);
+        const updatedAcks = alreadyAcked 
+          ? notif.acknowledgedBy.map(a => a.recipientId === ack.recipientId ? ack : a)
+          : [...notif.acknowledgedBy, ack];
+
+        const dialect = detectedDialects.notificacoes_sistema || 'pt';
+        const updatePayload = mapNotificationToDb({
+          status: 'acknowledged',
+          acknowledgedBy: updatedAcks
+        }, dialect);
+        delete updatePayload.id;
+
+        await supabase.from('notificacoes_sistema').update(updatePayload).eq('id', notificationId);
+      }
+    } catch (e) {
+      console.warn('[Supabase Notice: acknowledgeNotification error]', e);
+    }
+    return true;
+  },
+
+  // 20. Delete Notification
+  async deleteNotification(id: string): Promise<boolean> {
+    const supabase = getSupabase();
+    const { error } = await supabase.from('notificacoes_sistema').delete().eq('id', id);
+    if (error) {
+      console.warn('[Supabase Notice: deleteNotification]', error.message);
+    }
+    return true;
+  },
+
+  // 21. Clear All Notifications
+  async clearAllNotifications(): Promise<boolean> {
+    const supabase = getSupabase();
+    const { error } = await supabase.from('notificacoes_sistema').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) {
+      console.warn('[Supabase Notice: clearAllNotifications]', error.message);
     }
     return true;
   }

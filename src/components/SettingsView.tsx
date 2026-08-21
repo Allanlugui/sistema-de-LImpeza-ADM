@@ -125,10 +125,37 @@ CREATE TABLE IF NOT EXISTS public.clientes (
 );
 
 -- Migração rápida para tabelas já existentes:
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS nome TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS foto_url TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS document_type TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS tipo_documento TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS document_number TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS documento TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS telefone TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS whatsapp TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS preferred_contact TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS canal_preferencial TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS address JSONB;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS endereco JSONB;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ativo';
 ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS recovery_code TEXT;
-ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS codigo_recuperacao TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS senha TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS observacoes_internas TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS preferred_service_type TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS servico_preferencial TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS preferred_org_format TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS formato_organizacao_preferencial TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS operational_notes JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS avaliacoes_operacionais JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS contato_emergencia TEXT;
 
 -- 3. Tabela de Colaboradores
 CREATE TABLE IF NOT EXISTS public.colaboradores (
@@ -220,6 +247,59 @@ CREATE TABLE IF NOT EXISTS public.solicitacoes_servico (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Migrações de compatibilidade para solicitacoes_servico:
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS codigo_ordem TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_name TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_nome TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_document TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_documento TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_document_type TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_documento_tipo TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_email TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_email TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_phone TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_telefone TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_whatsapp TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS cliente_whatsapp TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS address JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS endereco JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS service_type TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS tipo_servico TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS organization_format TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS formato_organizacao TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS org_details JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS detalhes_organizacao JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS property_details JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS detalhes_imovel JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS schedule_date DATE;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS data_agendada DATE;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS schedule_time TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS horario_agendado TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS estimated_duration_hours NUMERIC(4, 1) DEFAULT 5.0;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS duracao_estimada_horas NUMERIC(4, 1) DEFAULT 5.0;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2);
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS valor_total NUMERIC(10, 2);
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente';
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS assigned_staff_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS colaborador_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS assigned_staff_name TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS colaborador_nome TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'media';
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS prioridade TEXT DEFAULT 'media';
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS client_notes TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS observacoes_cliente TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS confirmation_code TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS codigo_confirmacao TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS code_validated_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS codigo_validado_em TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS code_validated_by_staff_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS codigo_validado_por_id TEXT;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS execution_tracking JSONB;
+ALTER TABLE public.solicitacoes_servico ADD COLUMN IF NOT EXISTS rastreamento_execucao JSONB;
+
 -- 5. Tabela de Feedbacks e Avaliações
 CREATE TABLE IF NOT EXISTS public.avaliacoes_feedback (
     id TEXT PRIMARY KEY,
@@ -237,38 +317,156 @@ CREATE TABLE IF NOT EXISTS public.avaliacoes_feedback (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. Ativação de Row Level Security (RLS) Mandatória em 100% das Tabelas
+-- Migrações de compatibilidade para avaliacoes_feedback:
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS request_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS solicitacao_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS request_code TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS solicitacao_codigo TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS client_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS cliente_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS client_name TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS cliente_nome TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS client_email TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS cliente_email TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS staff_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS colaborador_id TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS staff_name TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS colaborador_nome TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS service_type TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS tipo_servico TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS rating INTEGER;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS nota INTEGER;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'elogio';
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'elogio';
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS titulo TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS comment TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS comentario TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'resolvido';
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS notas_resolucao TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS resolvido_em TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS resolved_by TEXT;
+ALTER TABLE public.avaliacoes_feedback ADD COLUMN IF NOT EXISTS resolvido_por TEXT;
+
+-- 6. Tabela de Notificações do Sistema e Hub de Comunicação em Tempo Real
+CREATE TABLE IF NOT EXISTS public.notificacoes_sistema (
+    id TEXT PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    mensagem TEXT NOT NULL,
+    destinatario TEXT NOT NULL DEFAULT 'all',
+    canal TEXT NOT NULL DEFAULT 'broadcast',
+    prioridade TEXT NOT NULL DEFAULT 'media',
+    remetente TEXT NOT NULL DEFAULT 'Administração Central',
+    cargo_remetente TEXT DEFAULT 'Admin',
+    categoria TEXT DEFAULT 'Geral',
+    metadados JSONB DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'delivered',
+    confirmacoes JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Migrações de compatibilidade para notificacoes_sistema (en/pt):
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS titulo TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS message TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS mensagem TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS target TEXT DEFAULT 'all';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT 'all';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'broadcast';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS canal TEXT DEFAULT 'broadcast';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'media';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS prioridade TEXT DEFAULT 'media';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS sender TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS remetente TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS sender_role TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS cargo_remetente TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS categoria TEXT;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS metadados JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'delivered';
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS acknowledged_by JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.notificacoes_sistema ADD COLUMN IF NOT EXISTS confirmacoes JSONB DEFAULT '[]'::jsonb;
+
+-- 7. Ativação de Row Level Security (RLS) Mandatória em 100% das Tabelas
 ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.colaboradores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solicitacoes_servico ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.avaliacoes_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notificacoes_sistema ENABLE ROW LEVEL SECURITY;
 
--- 7. Políticas de Acesso Seguro (Anon Key / Authenticated)
+-- 8. Políticas de Acesso Seguro (Idempotentes: DROP IF EXISTS antes do CREATE)
+DROP POLICY IF EXISTS "Permitir leitura anon/auth clientes" ON public.clientes;
+DROP POLICY IF EXISTS "Permitir insercao clientes" ON public.clientes;
+DROP POLICY IF EXISTS "Permitir atualizacao clientes" ON public.clientes;
+DROP POLICY IF EXISTS "Permitir delecao clientes" ON public.clientes;
 CREATE POLICY "Permitir leitura anon/auth clientes" ON public.clientes FOR SELECT USING (true);
 CREATE POLICY "Permitir insercao clientes" ON public.clientes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permitir atualizacao clientes" ON public.clientes FOR UPDATE USING (true);
 CREATE POLICY "Permitir delecao clientes" ON public.clientes FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura anon/auth colaboradores" ON public.colaboradores;
+DROP POLICY IF EXISTS "Permitir insercao colaboradores" ON public.colaboradores;
+DROP POLICY IF EXISTS "Permitir atualizacao colaboradores" ON public.colaboradores;
+DROP POLICY IF EXISTS "Permitir delecao colaboradores" ON public.colaboradores;
 CREATE POLICY "Permitir leitura anon/auth colaboradores" ON public.colaboradores FOR SELECT USING (true);
 CREATE POLICY "Permitir insercao colaboradores" ON public.colaboradores FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permitir atualizacao colaboradores" ON public.colaboradores FOR UPDATE USING (true);
 CREATE POLICY "Permitir delecao colaboradores" ON public.colaboradores FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura anon/auth solicitacoes" ON public.solicitacoes_servico;
+DROP POLICY IF EXISTS "Permitir insercao solicitacoes" ON public.solicitacoes_servico;
+DROP POLICY IF EXISTS "Permitir atualizacao solicitacoes" ON public.solicitacoes_servico;
+DROP POLICY IF EXISTS "Permitir delecao solicitacoes" ON public.solicitacoes_servico;
 CREATE POLICY "Permitir leitura anon/auth solicitacoes" ON public.solicitacoes_servico FOR SELECT USING (true);
 CREATE POLICY "Permitir insercao solicitacoes" ON public.solicitacoes_servico FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permitir atualizacao solicitacoes" ON public.solicitacoes_servico FOR UPDATE USING (true);
 CREATE POLICY "Permitir delecao solicitacoes" ON public.solicitacoes_servico FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura anon/auth avaliacoes" ON public.avaliacoes_feedback;
+DROP POLICY IF EXISTS "Permitir insercao avaliacoes" ON public.avaliacoes_feedback;
+DROP POLICY IF EXISTS "Permitir atualizacao avaliacoes" ON public.avaliacoes_feedback;
+DROP POLICY IF EXISTS "Permitir delecao avaliacoes" ON public.avaliacoes_feedback;
 CREATE POLICY "Permitir leitura anon/auth avaliacoes" ON public.avaliacoes_feedback FOR SELECT USING (true);
 CREATE POLICY "Permitir insercao avaliacoes" ON public.avaliacoes_feedback FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permitir atualizacao avaliacoes" ON public.avaliacoes_feedback FOR UPDATE USING (true);
 CREATE POLICY "Permitir delecao avaliacoes" ON public.avaliacoes_feedback FOR DELETE USING (true);
 
--- 8. Publicação Supabase Realtime (WebSocket Sincronizado)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.clientes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.colaboradores;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.solicitacoes_servico;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.avaliacoes_feedback;
+DROP POLICY IF EXISTS "Permitir leitura anon/auth notificacoes" ON public.notificacoes_sistema;
+DROP POLICY IF EXISTS "Permitir insercao notificacoes" ON public.notificacoes_sistema;
+DROP POLICY IF EXISTS "Permitir atualizacao notificacoes" ON public.notificacoes_sistema;
+DROP POLICY IF EXISTS "Permitir delecao notificacoes" ON public.notificacoes_sistema;
+CREATE POLICY "Permitir leitura anon/auth notificacoes" ON public.notificacoes_sistema FOR SELECT USING (true);
+CREATE POLICY "Permitir insercao notificacoes" ON public.notificacoes_sistema FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir atualizacao notificacoes" ON public.notificacoes_sistema FOR UPDATE USING (true);
+CREATE POLICY "Permitir delecao notificacoes" ON public.notificacoes_sistema FOR DELETE USING (true);
+
+-- 9. Publicação Supabase Realtime Segura (Tratamento para não falhar se já existir)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.clientes;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.colaboradores;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.solicitacoes_servico;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.avaliacoes_feedback;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notificacoes_sistema;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
 `;
 
   const handleCopySql = () => {

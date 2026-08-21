@@ -15,9 +15,12 @@ import {
   MapPin,
   TrendingUp,
   ShieldAlert,
-  Play
+  Play,
+  Radio,
+  Send
 } from 'lucide-react';
 import { formatCurrency, formatSecondsToTimer } from '../utils/formatters';
+import { SystemCommunicationHub } from './SystemCommunicationHub';
 
 interface OverviewDashboardProps {
   onOpenNewRequestModal: () => void;

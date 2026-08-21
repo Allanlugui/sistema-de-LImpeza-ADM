@@ -178,3 +178,34 @@ export interface CustomerFeedback {
   resolvedAt?: string;
   resolvedBy?: string;
 }
+
+export type NotificationTarget = 'all' | 'cliente' | 'colaborador' | 'admin';
+export type NotificationChannel = 'broadcast' | 'push_simulado' | 'alerta_operacional' | 'sync_ping';
+export type NotificationPriority = 'baixa' | 'media' | 'alta' | 'urgente';
+export type NotificationStatus = 'dispatched' | 'delivered' | 'acknowledged';
+
+export interface NotificationAcknowledgement {
+  recipientId: string;
+  recipientName: string;
+  recipientType: 'cliente' | 'colaborador' | 'admin';
+  acknowledgedAt: string;
+  deviceInfo?: string;
+  responseNote?: string;
+  latencyMs?: number;
+}
+
+export interface SystemNotification {
+  id: string;
+  title: string;
+  message: string;
+  target: NotificationTarget;
+  channel: NotificationChannel;
+  priority: NotificationPriority;
+  sender: string;
+  senderRole: string;
+  category?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  status: NotificationStatus;
+  acknowledgedBy: NotificationAcknowledgement[];
+}
