@@ -133,22 +133,60 @@ ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS senha TEXT;
 -- 3. Tabela de Colaboradores
 CREATE TABLE IF NOT EXISTS public.colaboradores (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    cpf TEXT NOT NULL,
-    phone TEXT NOT NULL,
+    name TEXT,
+    nome TEXT,
+    email TEXT,
+    cpf TEXT,
+    phone TEXT,
+    telefone TEXT,
     photo_url TEXT,
-    role TEXT NOT NULL DEFAULT 'Diarista Profissional',
+    foto_url TEXT,
+    role TEXT DEFAULT 'Diarista Profissional',
+    cargo TEXT DEFAULT 'Diarista Profissional',
     status TEXT NOT NULL DEFAULT 'ativo',
     rating NUMERIC(3, 2) DEFAULT 5.0,
+    avaliacao_media NUMERIC(3, 2) DEFAULT 5.0,
     completed_services_count INTEGER DEFAULT 0,
+    total_servicos_concluidos INTEGER DEFAULT 0,
     hire_date DATE DEFAULT CURRENT_DATE,
+    data_contratacao DATE DEFAULT CURRENT_DATE,
     specialties TEXT[] DEFAULT '{}',
+    especialidades TEXT[] DEFAULT '{}',
     notes TEXT,
+    observacoes_operacionais TEXT,
     allow_app_access BOOLEAN DEFAULT true,
+    permite_acesso_app BOOLEAN DEFAULT true,
     emergency_contact TEXT,
+    contato_emergencia TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migrações de compatibilidade para tabelas já existentes:
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS nome TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS cpf TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS telefone TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS foto_url TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS role TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS cargo TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ativo';
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS rating NUMERIC(3, 2) DEFAULT 5.0;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS avaliacao_media NUMERIC(3, 2) DEFAULT 5.0;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS completed_services_count INTEGER DEFAULT 0;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS total_servicos_concluidos INTEGER DEFAULT 0;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS hire_date DATE DEFAULT CURRENT_DATE;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS data_contratacao DATE DEFAULT CURRENT_DATE;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS specialties TEXT[] DEFAULT '{}';
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS especialidades TEXT[] DEFAULT '{}';
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS observacoes_operacionais TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS allow_app_access BOOLEAN DEFAULT true;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS permite_acesso_app BOOLEAN DEFAULT true;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS contato_emergencia TEXT;
 
 -- 4. Tabela de Solicitações de Serviço / Ordens de Serviço
 CREATE TABLE IF NOT EXISTS public.solicitacoes_servico (

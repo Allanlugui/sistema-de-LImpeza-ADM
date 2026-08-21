@@ -381,46 +381,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       operationalNotes: []
     };
-    
-    // Optimistic state
-    setClients(prev => [newClient, ...prev]);
-    
-    // Supabase persist
-    await SupabaseService.insertClient(newClient);
 
-    addToast({
-      type: 'success',
-      title: 'Cliente Cadastrado no Supabase',
-      message: `${newClient.name} foi adicionado(a) com Código de Recuperação #${newRecoveryCode}.`
-    });
-    return newId;
+    try {
+      // Direct remote Supabase persist
+      const inserted = await SupabaseService.insertClient(newClient);
+      setClients(prev => [inserted, ...prev.filter(c => c.id !== inserted.id)]);
+
+      addToast({
+        type: 'success',
+        title: 'Cliente Cadastrado no Supabase',
+        message: `${inserted.name} foi adicionado(a) com Código #${newRecoveryCode}.`
+      });
+      return inserted.id;
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao cadastrar cliente no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Salvar no Supabase',
+        message: error?.message || 'Falha ao persistir cliente no banco remoto.'
+      });
+      throw error;
+    }
   };
 
   const updateClient = async (id: string, data: Partial<Client>) => {
-    setClients(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
-    
-    // Supabase persist
-    await SupabaseService.updateClient(id, data);
+    try {
+      // Direct remote Supabase update
+      await SupabaseService.updateClient(id, data);
+      setClients(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
 
-    addToast({
-      type: 'info',
-      title: 'Cadastro Atualizado no Supabase',
-      message: 'As alterações cadastrais foram salvas com sucesso.'
-    });
+      addToast({
+        type: 'info',
+        title: 'Cadastro Atualizado no Supabase',
+        message: 'As alterações cadastrais foram salvas com sucesso.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar cliente no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro na Atualização',
+        message: error?.message || 'Falha ao salvar alterações no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const resetClientPassword = async (id: string, newPassword: string) => {
     const client = clients.find(c => c.id === id);
     if (!client) return;
 
-    setClients(prev => prev.map(c => c.id === id ? { ...c, password: newPassword } : c));
-    await SupabaseService.updateClient(id, { password: newPassword });
+    try {
+      await SupabaseService.updateClient(id, { password: newPassword });
+      setClients(prev => prev.map(c => c.id === id ? { ...c, password: newPassword } : c));
 
-    addToast({
-      type: 'success',
-      title: 'Senha Redefinida com Sucesso',
-      message: `A senha de acesso do cliente ${client.name} foi atualizada no Supabase.`
-    });
+      addToast({
+        type: 'success',
+        title: 'Senha Redefinida com Sucesso',
+        message: `A senha de acesso do cliente ${client.name} foi atualizada no Supabase.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao redefinir senha no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Redefinir Senha',
+        message: error?.message || 'Falha ao gravar nova senha no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const regenerateClientRecoveryCode = async (id: string): Promise<string> => {
@@ -428,15 +455,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!client) return '';
 
     const newCode = generateRecoveryCode();
-    setClients(prev => prev.map(c => c.id === id ? { ...c, recoveryCode: newCode } : c));
-    await SupabaseService.updateClient(id, { recoveryCode: newCode });
+    try {
+      await SupabaseService.updateClient(id, { recoveryCode: newCode });
+      setClients(prev => prev.map(c => c.id === id ? { ...c, recoveryCode: newCode } : c));
 
-    addToast({
-      type: 'warning',
-      title: 'Novo Código de Recuperação Gerado',
-      message: `Novo código para ${client.name}: #${newCode} (6 dígitos gravados no Supabase).`
-    });
-    return newCode;
+      addToast({
+        type: 'warning',
+        title: 'Novo Código de Recuperação Gerado',
+        message: `Novo código para ${client.name}: #${newCode} gravado no Supabase.`
+      });
+      return newCode;
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao gerar novo código no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Atualizar Código',
+        message: error?.message || 'Falha ao salvar código no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const toggleClientStatus = async (id: string) => {
@@ -444,14 +481,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!client) return;
 
     const nextStatus = client.status === 'ativo' ? 'bloqueado' : 'ativo';
-    setClients(prev => prev.map(c => c.id === id ? { ...c, status: nextStatus } : c));
-    await SupabaseService.updateClient(id, { status: nextStatus });
+    try {
+      await SupabaseService.updateClient(id, { status: nextStatus });
+      setClients(prev => prev.map(c => c.id === id ? { ...c, status: nextStatus } : c));
 
-    addToast({
-      type: nextStatus === 'ativo' ? 'success' : 'warning',
-      title: nextStatus === 'ativo' ? 'Acesso Desbloqueado' : 'Acesso Bloqueado',
-      message: `O status do cliente ${client.name} agora é ${nextStatus.toUpperCase()} no Supabase.`
-    });
+      addToast({
+        type: nextStatus === 'ativo' ? 'success' : 'warning',
+        title: nextStatus === 'ativo' ? 'Acesso Desbloqueado' : 'Acesso Bloqueado',
+        message: `O status do cliente ${client.name} agora é ${nextStatus.toUpperCase()} no Supabase.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao alterar status no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Alterar Status',
+        message: error?.message || 'Falha ao atualizar status no banco de dados.'
+      });
+      throw error;
+    }
   };
 
   const deleteClient = async (id: string): Promise<{ success: boolean; message: string }> => {
@@ -480,16 +527,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // Proceed with deletion in Supabase & optimistic UI
-    setClients(prev => prev.filter(c => c.id !== id));
-    await SupabaseService.deleteClient(id);
+    try {
+      // Direct remote Supabase delete
+      await SupabaseService.deleteClient(id);
+      setClients(prev => prev.filter(c => c.id !== id));
 
-    addToast({
-      type: 'warning',
-      title: 'Cliente Removido do Banco',
-      message: `O cadastro de ${client.name} foi excluído do Supabase.`
-    });
-    return { success: true, message: `Cliente ${client.name} excluído com sucesso.` };
+      addToast({
+        type: 'warning',
+        title: 'Cliente Removido do Banco',
+        message: `O cadastro de ${client.name} foi excluído do Supabase.`
+      });
+      return { success: true, message: `Cliente ${client.name} excluído com sucesso.` };
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao excluir cliente no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Excluir Cliente',
+        message: error?.message || 'Falha ao excluir registro no Supabase.'
+      });
+      return { success: false, message: error?.message || 'Falha ao excluir no banco de dados.' };
+    }
   };
 
   const addClientOperationalNote = async (clientId: string, noteData: Omit<ClientOperationalEvaluation, 'id' | 'date'>) => {
@@ -499,39 +556,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       date: new Date().toISOString(),
     };
 
-    setClients(prev => prev.map(c => {
-      if (c.id === clientId) {
-        return {
-          ...c,
-          operationalNotes: [newNote, ...(c.operationalNotes || [])]
-        };
-      }
-      return c;
-    }));
+    try {
+      await SupabaseService.insertOperationalNote(clientId, newNote);
+      setClients(prev => prev.map(c => {
+        if (c.id === clientId) {
+          return {
+            ...c,
+            operationalNotes: [newNote, ...(c.operationalNotes || [])]
+          };
+        }
+        return c;
+      }));
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabase();
-      await supabase.from('avaliacoes_operacionais_cliente').insert({
-        id: newNote.id,
-        cliente_id: clientId,
-        autor_id: newNote.staffId || null,
-        autor_nome: newNote.authorName,
-        autor_cargo: newNote.authorRole,
-        aspecto: newNote.aspect || 'geral',
-        nota_comportamento: newNote.clientBehaviorRating || 5,
-        nota_condicao_imovel: newNote.propertyConditionRating || 5,
-        avaliacao_comportamento: newNote.behaviorEvaluation || 'excelente',
-        condicao_imovel: newNote.propertyCondition || 'adequado',
-        comentario: newNote.comment,
-        tags: newNote.tags || []
+      addToast({
+        type: 'success',
+        title: 'Avaliação Operacional Registrada',
+        message: `Nota técnica salva no histórico do cliente no Supabase.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao registrar nota operacional no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Salvar Avaliação',
+        message: error?.message || 'Falha ao persistir nota no banco.'
       });
     }
-
-    addToast({
-      type: 'success',
-      title: 'Avaliação Operacional Registrada',
-      message: `Nota técnica salva no histórico do cliente.`
-    });
   };
 
   // Collaborator Handlers
@@ -542,53 +591,93 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rating: 5.0,
       completedServicesCount: 0,
     };
-    
-    setCollaborators(prev => [...prev, newCollab]);
-    await SupabaseService.insertCollaborator(newCollab);
 
-    addToast({
-      type: 'success',
-      title: 'Colaborador Cadastrado no Supabase',
-      message: `${newCollab.name} foi adicionado(a) e está habilitado(a) no banco de dados.`
-    });
+    try {
+      const inserted = await SupabaseService.insertCollaborator(newCollab);
+      setCollaborators(prev => [...prev.filter(c => c.id !== inserted.id), inserted]);
+
+      addToast({
+        type: 'success',
+        title: 'Colaborador Cadastrado no Supabase',
+        message: `${inserted.name} foi adicionado(a) e está habilitado(a) no banco de dados.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao cadastrar colaborador no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Salvar Colaborador',
+        message: error?.message || 'Falha ao cadastrar colaborador no banco de dados.'
+      });
+      throw error;
+    }
   };
 
   const updateCollaborator = async (id: string, data: Partial<Collaborator>) => {
-    setCollaborators(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
-    await SupabaseService.updateCollaborator(id, data);
+    try {
+      await SupabaseService.updateCollaborator(id, data);
+      setCollaborators(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
 
-    addToast({
-      type: 'info',
-      title: 'Colaborador Atualizado no Banco',
-      message: 'Os dados foram salvos com sucesso no Supabase.'
-    });
+      addToast({
+        type: 'info',
+        title: 'Colaborador Atualizado no Banco',
+        message: 'Os dados foram salvos com sucesso no Supabase.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar colaborador no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Atualizar Colaborador',
+        message: error?.message || 'Falha ao gravar alterações no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const deleteCollaborator = async (id: string) => {
     const target = collaborators.find(c => c.id === id);
-    setCollaborators(prev => prev.filter(c => c.id !== id));
-    await SupabaseService.deleteCollaborator(id);
+    try {
+      await SupabaseService.deleteCollaborator(id);
+      setCollaborators(prev => prev.filter(c => c.id !== id));
 
-    addToast({
-      type: 'warning',
-      title: 'Colaborador Removido',
-      message: `${target?.name || 'O colaborador'} foi excluído do Supabase.`
-    });
+      addToast({
+        type: 'warning',
+        title: 'Colaborador Removido',
+        message: `${target?.name || 'O colaborador'} foi excluído do Supabase.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao excluir colaborador no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Excluir Colaborador',
+        message: error?.message || 'Falha ao excluir colaborador no banco.'
+      });
+      throw error;
+    }
   };
 
   const toggleAppAccess = async (id: string) => {
     const target = collaborators.find(c => c.id === id);
     if (!target) return;
     const nextState = !target.allowAppAccess;
-    
-    setCollaborators(prev => prev.map(c => c.id === id ? { ...c, allowAppAccess: nextState } : c));
-    await SupabaseService.updateCollaborator(id, { allowAppAccess: nextState });
 
-    addToast({
-      type: nextState ? 'success' : 'warning',
-      title: nextState ? 'Acesso ao App Liberado' : 'Acesso ao App Bloqueado',
-      message: `${target.name} ${nextState ? 'agora pode realizar login' : 'foi impedido(a) de autenticar'} no aplicativo operacional.`
-    });
+    try {
+      await SupabaseService.updateCollaborator(id, { allowAppAccess: nextState });
+      setCollaborators(prev => prev.map(c => c.id === id ? { ...c, allowAppAccess: nextState } : c));
+
+      addToast({
+        type: nextState ? 'success' : 'warning',
+        title: nextState ? 'Acesso ao App Liberado' : 'Acesso ao App Bloqueado',
+        message: `${target.name} ${nextState ? 'agora pode realizar login' : 'foi impedido(a) de autenticar'} no aplicativo operacional.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao alterar acesso no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Alterar Permissão',
+        message: error?.message || 'Falha ao atualizar acesso no Supabase.'
+      });
+      throw error;
+    }
   };
 
   // Request Handlers
@@ -640,74 +729,120 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => [newRequest, ...prev]);
-    await SupabaseService.insertRequest(newRequest);
+    try {
+      const inserted = await SupabaseService.insertRequest(newRequest);
+      setRequests(prev => [inserted, ...prev.filter(r => r.id !== inserted.id)]);
 
-    addToast({
-      type: 'success',
-      title: 'Solicitação Criada no Supabase',
-      message: `Ordem ${newCode} registrada no banco com código de segurança [${confirmationCode}].`
-    });
-    return newId;
+      addToast({
+        type: 'success',
+        title: 'Solicitação Criada no Supabase',
+        message: `Ordem ${inserted.code} registrada no banco com código de segurança [${inserted.confirmationCode}].`
+      });
+      return inserted.id;
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao criar solicitação no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Gravar Ordem no Supabase',
+        message: error?.message || 'Falha ao persistir solicitação no banco remoto.'
+      });
+      throw error;
+    }
   };
 
   const updateRequest = async (id: string, data: Partial<CustomerRequest>) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
-    await SupabaseService.updateRequest(id, data);
+    try {
+      await SupabaseService.updateRequest(id, data);
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
 
-    addToast({
-      type: 'info',
-      title: 'Solicitação Atualizada no Supabase',
-      message: 'As alterações foram sincronizadas no banco de dados.'
-    });
+      addToast({
+        type: 'info',
+        title: 'Solicitação Atualizada no Supabase',
+        message: 'As alterações foram sincronizadas no banco de dados.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar solicitação no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro na Atualização',
+        message: error?.message || 'Falha ao salvar alterações no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const deleteRequest = async (id: string) => {
-    setRequests(prev => prev.filter(r => r.id !== id));
-    await SupabaseService.deleteRequest(id);
+    try {
+      await SupabaseService.deleteRequest(id);
+      setRequests(prev => prev.filter(r => r.id !== id));
 
-    addToast({
-      type: 'warning',
-      title: 'Solicitação Removida do Supabase',
-      message: 'A ordem de serviço foi excluída do banco de dados.'
-    });
+      addToast({
+        type: 'warning',
+        title: 'Solicitação Removida do Supabase',
+        message: 'A ordem de serviço foi excluída do banco de dados.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao excluir solicitação no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Excluir Solicitação',
+        message: error?.message || 'Falha ao excluir ordem de serviço no banco.'
+      });
+      throw error;
+    }
   };
 
   const allocateStaff = async (requestId: string, staffId: string) => {
     const staff = collaborators.find(c => c.id === staffId);
     if (!staff) return;
 
-    let assignedCode = '';
-
     const targetReq = requests.find(r => r.id === requestId);
-    const code = targetReq?.confirmationCode || generateSecurityCode();
-    assignedCode = code;
+    const assignedCode = targetReq?.confirmationCode || generateSecurityCode();
 
     const updates: Partial<CustomerRequest> = {
       status: 'alocado',
       assignedStaffId: staff.id,
       assignedStaffName: staff.name,
-      confirmationCode: code
+      confirmationCode: assignedCode
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    setCollaborators(prev => prev.map(c => c.id === staffId && c.status === 'ativo' ? { ...c, status: 'em_servico' } : c));
+    try {
+      await Promise.all([
+        SupabaseService.updateRequest(requestId, updates),
+        SupabaseService.updateCollaborator(staffId, { status: 'em_servico' })
+      ]);
 
-    await Promise.all([
-      SupabaseService.updateRequest(requestId, updates),
-      SupabaseService.updateCollaborator(staffId, { status: 'em_servico' })
-    ]);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+      setCollaborators(prev => prev.map(c => c.id === staffId && c.status === 'ativo' ? { ...c, status: 'em_servico' } : c));
 
-    addToast({
-      type: 'success',
-      title: 'Colaborador Alocado no Supabase',
-      message: `${staff.name} foi designado(a) com código de segurança [${assignedCode}].`
-    });
+      addToast({
+        type: 'success',
+        title: 'Colaborador Alocado no Supabase',
+        message: `${staff.name} foi designado(a) com código de segurança [${assignedCode}].`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao alocar colaborador no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro na Alocação',
+        message: error?.message || 'Falha ao salvar alocação no banco de dados.'
+      });
+      throw error;
+    }
   };
 
   const updateRequestStatus = async (requestId: string, status: RequestStatus) => {
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
-    await SupabaseService.updateRequest(requestId, { status });
+    try {
+      await SupabaseService.updateRequest(requestId, { status });
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar status da solicitação:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Alterar Status',
+        message: error?.message || 'Falha ao atualizar status no Supabase.'
+      });
+    }
   };
 
   const validateAndStartExecution = async (requestId: string, inputCode: string, staffId?: string): Promise<{ success: boolean; message: string }> => {
@@ -749,32 +884,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
 
-    addToast({
-      type: 'success',
-      title: 'Código Validado no Supabase!',
-      message: `Identidade autenticada. Atendimento iniciado e cronômetro ativo.`
-    });
+      addToast({
+        type: 'success',
+        title: 'Código Validado no Supabase!',
+        message: `Identidade autenticada. Atendimento iniciado e cronômetro ativo.`
+      });
 
-    return {
-      success: true,
-      message: 'Código de confirmação autenticado com sucesso! Início do atendimento e cronômetro liberados.'
-    };
+      return {
+        success: true,
+        message: 'Código de confirmação autenticado com sucesso! Início do atendimento e cronômetro liberados.'
+      };
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao validar código no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro na Validação',
+        message: error?.message || 'Falha ao registrar início da execução no banco.'
+      });
+      return { success: false, message: error?.message || 'Falha ao salvar validação no banco.' };
+    }
   };
 
   const regenerateSecurityCode = async (requestId: string): Promise<string> => {
     const newCode = generateSecurityCode();
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, confirmationCode: newCode } : r));
-    await SupabaseService.updateRequest(requestId, { confirmationCode: newCode });
+    try {
+      await SupabaseService.updateRequest(requestId, { confirmationCode: newCode });
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, confirmationCode: newCode } : r));
 
-    addToast({
-      type: 'info',
-      title: 'Código Atualizado no Supabase',
-      message: `Novo código [${newCode}] salvo no banco.`
-    });
-    return newCode;
+      addToast({
+        type: 'info',
+        title: 'Código Atualizado no Supabase',
+        message: `Novo código [${newCode}] salvo no banco.`
+      });
+      return newCode;
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar código no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Atualizar Código',
+        message: error?.message || 'Falha ao salvar código no Supabase.'
+      });
+      throw error;
+    }
   };
 
   const startExecutionTimer = async (requestId: string) => {
@@ -795,14 +950,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
 
-    addToast({
-      type: 'info',
-      title: 'Execução Iniciada',
-      message: 'O cronômetro ao vivo foi iniciado no Supabase.'
-    });
+      addToast({
+        type: 'info',
+        title: 'Execução Iniciada',
+        message: 'O cronômetro ao vivo foi iniciado no Supabase.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao iniciar cronômetro:', error);
+    }
   };
 
   const pauseExecutionTimer = async (requestId: string) => {
@@ -817,14 +976,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
 
-    addToast({
-      type: 'warning',
-      title: 'Execução Pausada',
-      message: 'O timer foi pausado no Supabase.'
-    });
+      addToast({
+        type: 'warning',
+        title: 'Execução Pausada',
+        message: 'O timer foi pausado no Supabase.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao pausar timer:', error);
+    }
   };
 
   const completeExecution = async (requestId: string, notes?: string) => {
@@ -839,26 +1002,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
 
-    if (target?.assignedStaffId) {
-      const staff = collaborators.find(c => c.id === target.assignedStaffId);
-      if (staff) {
-        const staffUpdates = {
-          status: 'ativo' as StaffStatus,
-          completedServicesCount: staff.completedServicesCount + 1
-        };
-        setCollaborators(prev => prev.map(c => c.id === target.assignedStaffId ? { ...c, ...staffUpdates } : c));
-        await SupabaseService.updateCollaborator(target.assignedStaffId, staffUpdates);
+      if (target?.assignedStaffId) {
+        const staff = collaborators.find(c => c.id === target.assignedStaffId);
+        if (staff) {
+          const staffUpdates = {
+            status: 'ativo' as StaffStatus,
+            completedServicesCount: staff.completedServicesCount + 1
+          };
+          await SupabaseService.updateCollaborator(target.assignedStaffId, staffUpdates);
+          setCollaborators(prev => prev.map(c => c.id === target.assignedStaffId ? { ...c, ...staffUpdates } : c));
+        }
       }
-    }
 
-    addToast({
-      type: 'success',
-      title: 'Serviço Concluído no Supabase!',
-      message: `A solicitação ${target?.code} foi finalizada no banco de dados.`
-    });
+      addToast({
+        type: 'success',
+        title: 'Serviço Concluído no Supabase!',
+        message: `A solicitação ${target?.code} foi finalizada no banco de dados.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao concluir serviço no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Concluir Serviço',
+        message: error?.message || 'Falha ao salvar conclusão no banco.'
+      });
+      throw error;
+    }
   };
 
   const toggleChecklistItem = async (requestId: string, itemId: string) => {
@@ -876,8 +1049,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar item do checklist:', error);
+    }
   };
 
   const addChecklistItem = async (requestId: string, task: string, category: 'limpeza' | 'organizacao' | 'geral') => {
@@ -898,8 +1075,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao adicionar item do checklist:', error);
+    }
   };
 
   const updateExecutionNotes = async (requestId: string, notes: string) => {
@@ -913,8 +1094,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
-    await SupabaseService.updateRequest(requestId, updates);
+    try {
+      await SupabaseService.updateRequest(requestId, updates);
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, ...updates } : r));
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao atualizar anotações operacionais:', error);
+    }
   };
 
   // Feedback Handlers
@@ -926,14 +1111,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'pendente'
     };
 
-    setFeedbacks(prev => [newFeedback, ...prev]);
-    await SupabaseService.insertFeedback(newFeedback);
+    try {
+      const inserted = await SupabaseService.insertFeedback(newFeedback);
+      setFeedbacks(prev => [inserted, ...prev.filter(f => f.id !== inserted.id)]);
 
-    addToast({
-      type: feedbackData.type === 'reclamacao' ? 'warning' : 'success',
-      title: 'Feedback Salvo no Supabase',
-      message: `Avaliação de ${feedbackData.clientName} registrada na central.`
-    });
+      addToast({
+        type: feedbackData.type === 'reclamacao' ? 'warning' : 'success',
+        title: 'Feedback Salvo no Supabase',
+        message: `Avaliação de ${feedbackData.clientName} registrada na central.`
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao salvar feedback no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Salvar Feedback',
+        message: error?.message || 'Falha ao registrar feedback no banco.'
+      });
+      throw error;
+    }
   };
 
   const resolveFeedback = async (id: string, notes: string) => {
@@ -944,14 +1139,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       resolvedBy: adminUser?.name || 'Administrador'
     };
 
-    setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
-    await SupabaseService.updateFeedback(id, updates);
+    try {
+      await SupabaseService.updateFeedback(id, updates);
+      setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
 
-    addToast({
-      type: 'success',
-      title: 'Chamado SAC Resolvido no Supabase',
-      message: 'O feedback foi marcado como tratado no banco.'
-    });
+      addToast({
+        type: 'success',
+        title: 'Chamado SAC Resolvido no Supabase',
+        message: 'O feedback foi marcado como tratado no banco.'
+      });
+    } catch (error: any) {
+      console.error('[AppContext] Erro ao resolver feedback no Supabase:', error);
+      addToast({
+        type: 'error',
+        title: 'Erro ao Resolver Feedback',
+        message: error?.message || 'Falha ao atualizar chamado no banco.'
+      });
+      throw error;
+    }
   };
 
   return (
